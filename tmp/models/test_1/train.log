@@ -1,0 +1,638 @@
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 20, FPS 11,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 40, FPS 12,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 60, FPS 13,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 05s, num timesteps 80, FPS 13,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 100, FPS 13,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 120, FPS 13,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 10s, num timesteps 140, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 12s, num timesteps 160, FPS 12,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 16s, num timesteps 180, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 19s, num timesteps 200, FPS 10,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 22s, num timesteps 220, FPS 9,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 25s, num timesteps 240, FPS 9,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 28s, num timesteps 260, FPS 9,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 31s, num timesteps 280, FPS 8,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 34s, num timesteps 300, FPS 8,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 38s, num timesteps 320, FPS 8,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 44s, num timesteps 340, FPS 7,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 52s, num timesteps 360, FPS 6,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 03s, num timesteps 380, FPS 5,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 18s, num timesteps 400, FPS 5,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 52s, num timesteps 420, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 18s, num timesteps 440, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 31s, num timesteps 460, FPS 3,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 55s, num timesteps 480, FPS 2,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 08s, num timesteps 500, FPS 2,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 30s, num timesteps 520, FPS 2,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 51s, num timesteps 540, FPS 2,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 12s, num timesteps 560, FPS 2,
+	Rewards: Global step mean/med rew: 0.1516/0.1129,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 32s, num timesteps 580, FPS 2,
+	Rewards: Global step mean/med rew: 0.1516/0.1129,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 45s, num timesteps 600, FPS 2,
+	Rewards: Global step mean/med rew: 0.1376/0.1054,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 57s, num timesteps 620, FPS 2,
+	Rewards: Global step mean/med rew: 0.1376/0.1054,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 20, FPS 6,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 40, FPS 8,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 06s, num timesteps 60, FPS 9,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 80, FPS 10,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 100, FPS 10,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 10s, num timesteps 120, FPS 11,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 12s, num timesteps 140, FPS 11,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 14s, num timesteps 160, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 17s, num timesteps 180, FPS 10,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 21s, num timesteps 200, FPS 9,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 24s, num timesteps 220, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 27s, num timesteps 240, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 30s, num timesteps 260, FPS 8,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 32s, num timesteps 280, FPS 8,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 35s, num timesteps 300, FPS 8,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 40s, num timesteps 320, FPS 7,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 46s, num timesteps 340, FPS 7,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 54s, num timesteps 360, FPS 6,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 20, FPS 10,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 40, FPS 12,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 60, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 06s, num timesteps 80, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 100, FPS 13,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 120, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 140, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 13s, num timesteps 160, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 17s, num timesteps 180, FPS 10,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 22s, num timesteps 200, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 26s, num timesteps 220, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 30s, num timesteps 240, FPS 7,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 35s, num timesteps 260, FPS 7,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 41s, num timesteps 280, FPS 6,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 48s, num timesteps 300, FPS 6,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 56s, num timesteps 320, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 07s, num timesteps 340, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 23s, num timesteps 360, FPS 4,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 43s, num timesteps 380, FPS 3,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 11s, num timesteps 400, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 01s, num timesteps 420, FPS 2,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 20, FPS 10,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 40, FPS 12,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 60, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 06s, num timesteps 80, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 100, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 120, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 140, FPS 11,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 14s, num timesteps 160, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 18s, num timesteps 180, FPS 9,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 22s, num timesteps 200, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 26s, num timesteps 220, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 31s, num timesteps 240, FPS 7,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 35s, num timesteps 260, FPS 7,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 40s, num timesteps 280, FPS 6,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 47s, num timesteps 300, FPS 6,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 56s, num timesteps 320, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 07s, num timesteps 340, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 22s, num timesteps 360, FPS 4,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 41s, num timesteps 380, FPS 3,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 09s, num timesteps 400, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 20, FPS 10,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 40, FPS 12,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 60, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 06s, num timesteps 80, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 100, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 120, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 140, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 13s, num timesteps 160, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 17s, num timesteps 180, FPS 10,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 22s, num timesteps 200, FPS 9,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 26s, num timesteps 220, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 30s, num timesteps 240, FPS 7,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 36s, num timesteps 260, FPS 7,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 42s, num timesteps 280, FPS 6,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 48s, num timesteps 300, FPS 6,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 56s, num timesteps 320, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 07s, num timesteps 340, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 23s, num timesteps 360, FPS 4,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 42s, num timesteps 380, FPS 3,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 10s, num timesteps 400, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 01s, num timesteps 420, FPS 2,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 48s, num timesteps 440, FPS 1,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 25s, num timesteps 460, FPS 1,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 05m 18s, num timesteps 480, FPS 1,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 06m 10s, num timesteps 500, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 07m 16s, num timesteps 520, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 08m 22s, num timesteps 540, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 09m 35s, num timesteps 560, FPS 0,
+	Rewards: Global step mean/med rew: 0.1516/0.1129,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 11m 01s, num timesteps 580, FPS 0,
+	Rewards: Global step mean/med rew: 0.1516/0.1129,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 12m 18s, num timesteps 600, FPS 0,
+	Rewards: Global step mean/med rew: 0.1376/0.1054,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=2, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 20, FPS 10,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 40, FPS 12,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 60, FPS 12,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 06s, num timesteps 80, FPS 13,
+	Rewards: Global step mean/med rew: 0.3619/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 100, FPS 13,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 120, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 140, FPS 12,
+	Rewards: Global step mean/med rew: 0.4182/0.4182,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 13s, num timesteps 160, FPS 11,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 17s, num timesteps 180, FPS 10,
+	Rewards: Global step mean/med rew: 0.3230/0.3619,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 22s, num timesteps 200, FPS 9,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 26s, num timesteps 220, FPS 8,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 31s, num timesteps 240, FPS 7,
+	Rewards: Global step mean/med rew: 0.2613/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 36s, num timesteps 260, FPS 7,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 41s, num timesteps 280, FPS 6,
+	Rewards: Global step mean/med rew: 0.1811/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 47s, num timesteps 300, FPS 6,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 00m 55s, num timesteps 320, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 06s, num timesteps 340, FPS 5,
+	Rewards: Global step mean/med rew: 0.2150/0.2473,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 20s, num timesteps 360, FPS 4,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 01m 38s, num timesteps 380, FPS 3,
+	Rewards: Global step mean/med rew: 0.1983/0.1327,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 02s, num timesteps 400, FPS 3,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 02m 45s, num timesteps 420, FPS 2,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 03m 27s, num timesteps 440, FPS 2,
+	Rewards: Global step mean/med rew: 0.1682/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 04m 10s, num timesteps 460, FPS 1,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 05m 07s, num timesteps 480, FPS 1,
+	Rewards: Global step mean/med rew: 0.1556/0.0980,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 05m 58s, num timesteps 500, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 07m 08s, num timesteps 520, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Time: 00d 00h 08m 16s, num timesteps 540, FPS 1,
+	Rewards: Global step mean/med rew: 0.1555/0.1154,  Global eps mean/med/min/max eps rew: 0.306/0.306/0.306/0.306,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=4, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=2, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=4, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=2, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=4, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=2, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=3, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 30, FPS 18,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 60, FPS 19,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 90, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 05s, num timesteps 120, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 150, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 180, FPS 19,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 210, FPS 18,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 13s, num timesteps 240, FPS 17,
+	Rewards: Global step mean/med rew: 0.3012/0.2516,  Global eps mean/med/min/max eps rew: 0.824/0.824/0.824/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 18s, num timesteps 270, FPS 14,
+	Rewards: Global step mean/med rew: 0.3012/0.2516,  Global eps mean/med/min/max eps rew: 0.824/0.824/0.824/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 21s, num timesteps 300, FPS 14,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 25s, num timesteps 330, FPS 13,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 30s, num timesteps 360, FPS 11,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 36s, num timesteps 390, FPS 10,
+	Rewards: Global step mean/med rew: 0.2385/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 42s, num timesteps 420, FPS 9,
+	Rewards: Global step mean/med rew: 0.2385/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 48s, num timesteps 450, FPS 9,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 59s, num timesteps 480, FPS 8,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 11s, num timesteps 510, FPS 7,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 25s, num timesteps 540, FPS 6,
+	Rewards: Global step mean/med rew: 0.2447/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 45s, num timesteps 570, FPS 5,
+	Rewards: Global step mean/med rew: 0.2447/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 02m 12s, num timesteps 600, FPS 4,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 02m 57s, num timesteps 630, FPS 3,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 03m 43s, num timesteps 660, FPS 2,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 04m 36s, num timesteps 690, FPS 2,
+	Rewards: Global step mean/med rew: 0.1992/0.2205,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 05m 27s, num timesteps 720, FPS 2,
+	Rewards: Global step mean/med rew: 0.1992/0.2205,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 06m 11s, num timesteps 750, FPS 2,
+	Rewards: Global step mean/med rew: 0.1873/0.2044,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 07m 11s, num timesteps 780, FPS 1,
+	Rewards: Global step mean/med rew: 0.1873/0.2044,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 08m 18s, num timesteps 810, FPS 1,
+	Rewards: Global step mean/med rew: 0.1873/0.2044,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 09m 29s, num timesteps 840, FPS 1,
+	Rewards: Global step mean/med rew: 0.1859/0.1884,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 10m 54s, num timesteps 870, FPS 1,
+	Rewards: Global step mean/med rew: 0.1859/0.1884,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 12m 10s, num timesteps 900, FPS 1,
+	Rewards: Global step mean/med rew: 0.1812/0.1801,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Namespace(seed=1, auto_gpu_config=0, total_num_scenes='5', num_processes=3, num_processes_per_gpu=6, num_processes_on_first_gpu=1, eval=0, num_training_frames=10000000, num_eval_episodes=200, num_train_episodes=10000, no_cuda=False, sim_gpu_id=0, sem_gpu_id=-1, log_interval=10, save_interval=1, dump_location='./tmp/', exp_name='test_1', save_periodic=500000, load='0', visualize=1, print_images=0, env_frame_width=640, env_frame_height=480, frame_width=160, frame_height=120, max_episode_length=500, task_config='tasks/objectnav_gibson.yaml', split='train', camera_height=0.88, hfov=79.0, turn_angle=30, min_depth=0.5, max_depth=5.0, success_dist=1.0, floor_thr=50, min_d=1.5, max_d=100.0, version='v1.1', agent='sem_exp', lr=2.5e-05, global_hidden_size=256, eps=1e-05, alpha=0.99, gamma=0.99, use_gae=False, tau=0.95, entropy_coef=0.001, value_loss_coef=0.5, max_grad_norm=0.5, num_global_steps=20, ppo_epoch=4, num_mini_batch=1, clip_param=0.2, use_recurrent_global=0, num_local_steps=25, reward_coeff=0.1, intrinsic_rew_coeff=0.02, num_sem_categories=16, sem_pred_prob_thr=0.9, global_downscaling=2, vision_range=100, map_resolution=5, du_scale=1, map_size_cm=2400, cat_pred_threshold=5.0, map_pred_threshold=1.0, exp_pred_threshold=1.0, collision_threshold=0.2, use_sea=True, sea_update_interval=20, cuda=True)
+INFO:root:Time: 00d 00h 00m 00s, num timesteps 0, FPS 0,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 01s, num timesteps 30, FPS 18,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 03s, num timesteps 60, FPS 19,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 04s, num timesteps 90, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 05s, num timesteps 120, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 07s, num timesteps 150, FPS 20,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 09s, num timesteps 180, FPS 19,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 11s, num timesteps 210, FPS 18,
+	Rewards:
+	Losses:
+INFO:root:Time: 00d 00h 00m 13s, num timesteps 240, FPS 17,
+	Rewards: Global step mean/med rew: 0.3012/0.2516,  Global eps mean/med/min/max eps rew: 0.824/0.824/0.824/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 18s, num timesteps 270, FPS 14,
+	Rewards: Global step mean/med rew: 0.3012/0.2516,  Global eps mean/med/min/max eps rew: 0.824/0.824/0.824/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 21s, num timesteps 300, FPS 14,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 25s, num timesteps 330, FPS 13,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 29s, num timesteps 360, FPS 12,
+	Rewards: Global step mean/med rew: 0.3026/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 35s, num timesteps 390, FPS 11,
+	Rewards: Global step mean/med rew: 0.2385/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 40s, num timesteps 420, FPS 10,
+	Rewards: Global step mean/med rew: 0.2385/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 46s, num timesteps 450, FPS 9,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 00m 57s, num timesteps 480, FPS 8,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 09s, num timesteps 510, FPS 7,
+	Rewards: Global step mean/med rew: 0.2541/0.2791,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 23s, num timesteps 540, FPS 6,
+	Rewards: Global step mean/med rew: 0.2447/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 01m 44s, num timesteps 570, FPS 5,
+	Rewards: Global step mean/med rew: 0.2447/0.2516,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 02m 11s, num timesteps 600, FPS 4,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 02m 57s, num timesteps 630, FPS 3,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 03m 45s, num timesteps 660, FPS 2,
+	Rewards: Global step mean/med rew: 0.2265/0.2360,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 04m 39s, num timesteps 690, FPS 2,
+	Rewards: Global step mean/med rew: 0.1992/0.2205,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
+INFO:root:Time: 00d 00h 05m 34s, num timesteps 720, FPS 2,
+	Rewards: Global step mean/med rew: 0.1992/0.2205,  Global eps mean/med/min/max eps rew: 0.669/0.669/0.514/0.824,
+	Losses:
