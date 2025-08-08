@@ -209,7 +209,11 @@ def main():
     # 根据目标物体所属场景调整长程目标
     def adjust_goal_by_scene(e, goal, locs):
         """如果当前房间不是目标房间，则将global goal指向最近的未探索区域"""
-        target_scene = category_to_scene.get(int(goal_cat_id[e]), None)
+        scene_probs = category_to_scene.get(int(goal_cat_id[e]))
+        target_scene = None
+        if scene_probs:
+            # 选取出现概率最高的场景作为目标房间
+            target_scene = max(scene_probs, key=scene_probs.get)
         curr_scene = infos[e].get('current_scene') if infos else None
         if target_scene is None or curr_scene == target_scene:
             return goal
@@ -224,6 +228,7 @@ def main():
         r = int(np.clip(r, 0, exp_map.shape[0] - 1))
         c = int(np.clip(c, 0, exp_map.shape[1] - 1))
         return [r, c]
+
 
     #调用函数初始化
     init_map_and_pose()

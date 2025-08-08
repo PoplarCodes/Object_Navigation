@@ -6,13 +6,8 @@ scenes["train"] = [
     'Coffeen',
     'Cosmos',
     'Forkland',
-    'Hanson',
-    'Hiteman',
     'Klickitat',
     'Lakeville',
-    'Leonardo',
-    'Lindenwood',
-    'Marstons',
     'Merom',
     'Mifflinburg',
     'Newfields',
@@ -22,8 +17,6 @@ scenes["train"] = [
     'Ranchester',
     'Shelbyville',
     'Stockman',
-    'Tolstoy',
-    'Wainscott',
     'Woodbine',
 ]
 scenes["val"] = [
@@ -99,8 +92,16 @@ semantic_scene_graph = {
     "study": [10, 0, 11, 2, 12]         # 书房常见: 书(10), 椅子(0), 时钟(11), 植物(2), 花瓶(12)
 }
 
-# 物体类别到场景的简单映射（若同类别出现在多个场景，取第一个匹配）
+# 物体类别到场景的概率映射，统计每个类别在不同场景中的出现权重
 category_to_scene = {}
 for scene, cats in semantic_scene_graph.items():
     for c in cats:
-        category_to_scene.setdefault(c, scene)
+        # 初始化类别的场景字典，并累加该类别在场景中的出现次数
+        category_to_scene.setdefault(c, {})
+        category_to_scene[c][scene] = category_to_scene[c].get(scene, 0) + 1
+
+# 将出现次数归一化为概率，并提供每个类别最可能的场景快捷访问
+for c, scene_counts in category_to_scene.items():
+    total = sum(scene_counts.values())
+    for scene in scene_counts:
+        scene_counts[scene] /= total
