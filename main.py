@@ -215,6 +215,8 @@ def main():
             # 选取出现概率最高的场景作为目标房间
             target_scene = max(scene_probs, key=scene_probs.get)
         curr_scene = infos[e].get('current_scene') if infos else None
+        if infos and infos[e].get('force_scene_change'):
+            curr_scene = None
         if target_scene is None or curr_scene == target_scene:
             return goal
         exp_map = local_map[e, 1].cpu().numpy()

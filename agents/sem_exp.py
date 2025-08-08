@@ -66,6 +66,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.current_scene = None
         self.prev_scene = None
         self.scanned_target_scene = False
+        self.scene_step_count = 0
 
         if args.visualize or args.print_images:
             self.legend = cv2.imread('docs/legend.png')
@@ -93,6 +94,10 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.curr_loc = [args.map_size_cm / 100.0 / 2.0,
                          args.map_size_cm / 100.0 / 2.0, 0.]
         self.last_action = None
+
+        self.scene_step_count = 0
+        self.info['scene_step'] = 0
+        self.info['force_scene_change'] = False
 
         if args.visualize or args.print_images:
             self.vis_image = vu.init_vis_image(self.goal_name, self.legend)
@@ -144,6 +149,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         classes = self._extract_object_classes(self.obs)
         scene = self._infer_scene_from_classes(classes)
         if scene is not None:
+            if scene != self.current_scene:
+                self.scene_step_count = 0
             self.prev_scene = self.current_scene
             self.current_scene = scene
             self.info['current_scene'] = scene
@@ -225,6 +232,13 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.info["g_reward"] = 0
         # 更新当前场景信息
         self._update_current_scene()
+        self.scene_step_count += 1
+        self.info['scene_step'] = self.scene_step_count
+        force_change = (
+            self.scene_step_count >= self.args.scene_max_steps
+            and planner_inputs.get('found_goal') == 0
+        )
+        self.info['force_scene_change'] = force_change
         target_scene = self._get_target_scene()
         if (
             not self.scanned_target_scene
@@ -341,6 +355,11 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.info = info
 
             info['g_reward'] += rew
+            if (
+                info.get('time', 0) >= self.args.max_episode_length
+                and planner_inputs.get('found_goal') == 0
+            ):
+                info['episode_failed'] = True
 
             return obs, rew, done, info
 

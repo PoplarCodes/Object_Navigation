@@ -84,6 +84,8 @@ def get_args():
                         help='Frame height (default:120)')
     parser.add_argument('-el', '--max_episode_length', type=int, default=500,  #原500
                         help="""Maximum episode length""")
+    parser.add_argument('--scene_max_steps', type=int, default=200,
+                        help='maximum steps to stay in one scene before switching')
     parser.add_argument("--task_config", type=str,
                         default="tasks/objectnav_gibson.yaml",
                         help="path to config yaml containing task information")
