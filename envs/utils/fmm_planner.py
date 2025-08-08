@@ -73,7 +73,7 @@ class FMMPlanner():
         self.fmm_dist = dd
         return
 
-    def get_short_term_goal(self, state):
+    def get_short_term_goal(self, state, visited=None, visited_penalty=0):
         scale = self.scale * 1.
         state = [x / scale for x in state]
         dx, dy = state[0] - int(state[0]), state[1] - int(state[1])
@@ -93,6 +93,13 @@ class FMMPlanner():
 
         subset *= mask
         subset += (1 - mask) * self.fmm_dist.shape[0] ** 2
+
+        # 如果提供了已访问区域，对应位置增加惩罚，降低再次选择的概率
+        if visited is not None:
+            visited = np.pad(visited, self.du, constant_values=0)
+            visited_subset = visited[state[0]:state[0] + 2 * self.du + 1,
+                                     state[1]:state[1] + 2 * self.du + 1]
+            subset += visited_penalty * visited_subset
 
         if subset[self.du, self.du] < 0.25 * 100 / 5.:  # 25cm
             stop = True

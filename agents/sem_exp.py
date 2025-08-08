@@ -10,8 +10,8 @@ from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
 from agents.utils import SemanticEnvironmentAtlas, SemanticGraphMap
-from constants import color_palette, semantic_scene_graph
-from constants import color_palette
+from constants import color_palette, semantic_scene_graph, category_to_scene
+
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
 
@@ -64,6 +64,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         # 当前场景类型
         self.current_scene = None
+        self.prev_scene = None
+        self.scanned_target_scene = False
 
         if args.visualize or args.print_images:
             self.legend = cv2.imread('docs/legend.png')
@@ -96,6 +98,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.vis_image = vu.init_vis_image(self.goal_name, self.legend)
 
         # 初始全景扫描，确定当前房间类型
+        self.prev_scene = None
+        self.scanned_target_scene = False
         self._panoramic_scan()
         return self.obs, self.info
 
@@ -140,8 +144,54 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         classes = self._extract_object_classes(self.obs)
         scene = self._infer_scene_from_classes(classes)
         if scene is not None:
+            self.prev_scene = self.current_scene
             self.current_scene = scene
             self.info['current_scene'] = scene
+
+    def _get_target_scene(self):
+        goal_cat = self.info.get('goal_cat_id')
+        if goal_cat is None:
+            return None
+        scene_probs = category_to_scene.get(int(goal_cat))
+        if scene_probs:
+            return max(scene_probs, key=scene_probs.get)
+        return None
+
+    def _quick_scan(self, goal_cat_id):
+        actions = [2, 3, 3]  # left 30°, back, right 30°
+        for act in actions:
+            obs, _, _, info = super().step({'action': act})
+            proc = self._preprocess_obs(obs)
+            self.obs = proc
+            self.info = info
+            classes = self._extract_object_classes(proc)
+            if goal_cat_id in classes:
+                return True
+        return False
+
+    def _estimate_goal_distance(self, goal_cat_id):
+        sem = self.obs[4:, :, :]
+        if goal_cat_id >= sem.shape[0]:
+            return None
+        mask = sem[goal_cat_id] > 0
+        if not mask.any():
+            return None
+        depth = self.obs[3]
+        return float(depth[mask].min()) / 100.0
+
+    def _approach_and_finish(self, goal_cat_id, stop_dist=5.0):
+        dist = self._estimate_goal_distance(goal_cat_id)
+        while dist is not None and dist > stop_dist:
+            obs, _, _, info = super().step({'action': 1})
+            proc = self._preprocess_obs(obs)
+            self.obs = proc
+            self.info = info
+            dist = self._estimate_goal_distance(goal_cat_id)
+        obs, rew, _, info = super().step({'action': 0})
+        proc = self._preprocess_obs(obs)
+        self.obs = proc
+        self.info = info
+        return proc, rew, True, info
 
     def plan_act_and_preprocess(self, planner_inputs):
         """Function responsible for planning, taking the action and
@@ -175,6 +225,18 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.info["g_reward"] = 0
         # 更新当前场景信息
         self._update_current_scene()
+        target_scene = self._get_target_scene()
+        if (
+            not self.scanned_target_scene
+            and target_scene is not None
+            and self.current_scene == target_scene
+        ):
+            self.scanned_target_scene = True
+            goal_cat_id = self.info.get('goal_cat_id')
+            if goal_cat_id is not None and self._quick_scan(goal_cat_id):
+                return self._approach_and_finish(goal_cat_id)
+            else:
+                self.info['curiosity_bonus'] = 1
         if self.sgm is not None:
             self.sgm.update(self.obs, planner_inputs.get('map_pred'),
                             planner_inputs.get('pose_pred'), room=self.current_scene)
@@ -184,7 +246,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             # R_obs：每个地点观察到的对象类别矩阵
             R_obs = self.sgm.place_object_matrix(self.args.num_sem_categories)
             # 当前任务目标的类别索引
-            goal_cat = self.info.get('goal_category')
+            goal_cat = self.info.get('goal_cat_id')
             # 扩展累计奖励矩阵以匹配新的地点数量
             if self.R.shape[0] < R_obs.shape[0]:
                 new_R = np.zeros((R_obs.shape[0], self.R.shape[1]), dtype=self.R.dtype)
@@ -251,14 +313,15 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         if self.atlas is not None:
             atlas_goal = self.atlas.query(
-                self.info.get('goal_category')
+                self.info.get('goal_cat_id')
             )
-            if planner_inputs.get('sea_goal') is not None:
-                planner_inputs['sea_goal'] = np.maximum(
-                    planner_inputs['sea_goal'], atlas_goal
-                )
-            else:
-                planner_inputs['sea_goal'] = atlas_goal
+            if atlas_goal is not None:
+                if planner_inputs.get('sea_goal') is not None:
+                    planner_inputs['sea_goal'] = np.maximum(
+                        planner_inputs['sea_goal'], atlas_goal
+                    )
+                else:
+                    planner_inputs['sea_goal'] = atlas_goal
 
         action = self._plan(planner_inputs)
 
@@ -339,7 +402,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 vu.draw_line(last_start, start,
                              self.visited_vis[gx1:gx2, gy1:gy2])
 
-        # Collision check
+        # 碰撞检测
         if self.last_action == 1:
             x1, y1, t1 = self.last_loc
             x2, y2, _ = self.curr_loc
@@ -356,7 +419,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 self.col_width = 1
 
             dist = pu.get_l2_distance(x1, x2, y1, y2)
-            if dist < args.collision_threshold:  # Collision
+            if dist < args.collision_threshold:  # 发生碰撞
                 width = self.col_width
                 for i in range(length):
                     for j in range(width):
@@ -373,8 +436,27 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                                                     self.collision_map.shape)
                         self.collision_map[r, c] = 1
 
-        stg, stop = self._get_stg(map_pred, start, np.copy(goal),
-                                  planning_window)
+        #stg, stop = self._get_stg(map_pred, start, np.copy(goal),
+                                  #planning_window)
+
+            # 前进计数器：连续前进但无位移则累加
+            if dist < args.collision_threshold:
+                self.count_forward_actions += 1
+            else:
+                self.count_forward_actions = 0
+        else:
+            self.count_forward_actions = 0
+
+        # 超过阈值认为卡死，触发恢复动作（左转）
+        if self.count_forward_actions >= args.stuck_forward_threshold:
+            self.count_forward_actions = 0
+            return 2
+
+        stg, stop, replan = self._get_stg(map_pred, start, np.copy(goal),planning_window)
+
+        # FMM 规划器建议重规划时，执行左转以摆脱局部最小值
+        if replan:
+            return 2
 
         # Deterministic Local Policy
         if stop and planner_inputs['found_goal'] == 1:
@@ -434,12 +516,13 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         goal = 1 - goal * 1.
         planner.set_multi_goal(goal)
 
-        state = [start[0] - x1 + 1, start[1] - y1 + 1]
-        stg_x, stg_y, _, stop = planner.get_short_term_goal(state)
+        visited_local = self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2]
 
+        state = [start[0] - x1 + 1, start[1] - y1 + 1]
+        stg_x, stg_y, replan, stop = planner.get_short_term_goal(state, visited_local, self.args.visited_penalty)
         stg_x, stg_y = stg_x + x1 - 1, stg_y + y1 - 1
 
-        return (stg_x, stg_y), stop
+        return (stg_x, stg_y), stop, replan
 
     def _preprocess_obs(self, obs, use_seg=True):
         args = self.args

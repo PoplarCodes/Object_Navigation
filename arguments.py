@@ -23,13 +23,13 @@ def get_args():
     parser.add_argument('--eval', type=int, default=0,
                         help='0: Train, 1: Evaluate (default: 0)')
 
-    parser.add_argument('--num_training_frames', type=int, default=10000000,  # 原default=10000000
+    parser.add_argument('--num_training_frames', type=int, default=10000,  # 原default=10000000
                         help='total number of training frames')
 
     parser.add_argument('--num_eval_episodes', type=int, default=200,
                         help="number of test episodes per scene")
 
-    parser.add_argument('--num_train_episodes', type=int, default=10000,  # 原default=10000
+    parser.add_argument('--num_train_episodes', type=int, default=1000,  # 原default=10000
                         help="""number of train episodes per scene
                                     before loading the next scene""")
 
@@ -165,6 +165,11 @@ def get_args():
     parser.add_argument('--collision_threshold', type=float, default=0.20)
     parser.add_argument('--use_sea', action='store_true', default=False)
     parser.add_argument('--sea_update_interval', type=int, default=10)
+    parser.add_argument('--stuck_forward_threshold', type=int, default=10,
+                        help='连续前进但无位移的次数阈值，用于检测卡死')
+    parser.add_argument('--visited_penalty', type=float, default=5.0,
+                        help='智能体重复经过路径的惩罚系数')
+
 
     args = parser.parse_args()
 

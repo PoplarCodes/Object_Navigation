@@ -490,7 +490,11 @@ def main():
             g_reward = torch.from_numpy(np.asarray(
                 [infos[env_idx]['g_reward'] for env_idx in range(num_scenes)])
             ).float().to(device)
-            g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
+            #g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
+            curiosity_bonus = torch.from_numpy(np.asarray(
+                [infos[env_idx].get('curiosity_bonus', 0) for env_idx in range(num_scenes)])
+            ).float().to(device)
+            g_reward += args.intrinsic_rew_coeff * (1 + curiosity_bonus) * intrinsic_rews.detach()
 
             g_process_rewards += g_reward.cpu().numpy()
             g_total_rewards = g_process_rewards * \
