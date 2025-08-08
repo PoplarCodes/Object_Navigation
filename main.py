@@ -14,6 +14,7 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
+from constants import category_to_scene  # 物体类别到场景的映射
 
 def main():
     args = get_args()
@@ -205,6 +206,25 @@ def main():
         intrinsic_rews[e] = curr_explored_area - prev_explored_area
         intrinsic_rews[e] *= (args.map_resolution / 100.)**2  # to m^2  内在奖励从网格数转换为实际的面积
 
+    # 根据目标物体所属场景调整长程目标
+    def adjust_goal_by_scene(e, goal, locs):
+        """如果当前房间不是目标房间，则将global goal指向最近的未探索区域"""
+        target_scene = category_to_scene.get(int(goal_cat_id[e]), None)
+        curr_scene = infos[e].get('current_scene') if infos else None
+        if target_scene is None or curr_scene == target_scene:
+            return goal
+        exp_map = local_map[e, 1].cpu().numpy()
+        loc_r = int(locs[e, 1] * 100.0 / args.map_resolution)
+        loc_c = int(locs[e, 0] * 100.0 / args.map_resolution)
+        frontiers = np.argwhere(exp_map == 0)
+        if frontiers.size == 0:
+            return goal
+        dists = np.linalg.norm(frontiers - np.array([loc_r, loc_c]), axis=1)
+        r, c = frontiers[np.argmin(dists)]
+        r = int(np.clip(r, 0, exp_map.shape[0] - 1))
+        c = int(np.clip(c, 0, exp_map.shape[1] - 1))
+        return [r, c]
+
     #调用函数初始化
     init_map_and_pose()
 
@@ -313,6 +333,9 @@ def main():
                     for action in cpu_actions]
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
+
+    for e in range(num_scenes):
+        global_goals[e] = adjust_goal_by_scene(e, global_goals[e], locs)
 
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
@@ -504,6 +527,10 @@ def main():
             global_goals = [[min(x, int(local_w - 1)),
                              min(y, int(local_h - 1))]
                             for x, y in global_goals]
+
+
+            for e in range(num_scenes):
+                global_goals[e] = adjust_goal_by_scene(e, global_goals[e], locs)
 
             g_reward = 0
             g_masks = torch.ones(num_scenes).float().to(device)

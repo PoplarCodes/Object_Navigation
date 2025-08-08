@@ -10,6 +10,7 @@ from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
 from agents.utils import SemanticEnvironmentAtlas, SemanticGraphMap
+from constants import color_palette, semantic_scene_graph
 from constants import color_palette
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
@@ -26,8 +27,11 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         self.args = args
         super().__init__(args, rank, config_env, dataset)
+        # 语义环境图谱，跨时间存储场景中对象的语义观测
         self.atlas = atlas
+        # 语义图结构，维护地点、图像和对象节点及其关系
         self.sgm = SemanticGraphMap()
+        # 地点-对象的奖励矩阵，记录各地点出现过的语义类别
         self.R = np.zeros((0, args.num_sem_categories), dtype=np.float32)
 
         self.device = args.device
@@ -57,6 +61,9 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.last_loc = None
         self.last_action = None
         self.count_forward_actions = None
+
+        # 当前场景类型
+        self.current_scene = None
 
         if args.visualize or args.print_images:
             self.legend = cv2.imread('docs/legend.png')
@@ -88,7 +95,53 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         if args.visualize or args.print_images:
             self.vis_image = vu.init_vis_image(self.goal_name, self.legend)
 
-        return obs, info
+        # 初始全景扫描，确定当前房间类型
+        self._panoramic_scan()
+        return self.obs, self.info
+
+    """从带有语义通道的状态中提取出现的物体类别"""
+    def _extract_object_classes(self, state):
+        """从带有语义通道的状态中提取出现的物体类别"""
+        sem = state[4:, :, :]
+        sem_flat = sem.reshape(sem.shape[0], -1)
+        classes = np.where(sem_flat.sum(axis=1) > 0)[0]
+        return set(classes.tolist())
+
+    """根据观测到的物体类别集合推断场景类型"""
+    def _infer_scene_from_classes(self, classes):
+        if 3 in classes:
+            return "bedroom"
+        if 4 in classes:
+            return "toilet"
+        best_scene, best_score = None, -1
+        for scene, cats in semantic_scene_graph.items():
+            score = sum(1 for c in classes if c in cats)
+            if score > best_score:
+                best_scene, best_score = scene, score
+        return best_scene
+
+    """原地旋转一圈收集观测信息并推断当前房间类型"""
+    def _panoramic_scan(self):
+        detected = self._extract_object_classes(self.obs)
+        for _ in range(12):
+            obs, _, _, _ = super().step({'action': 3})  # TURN_RIGHT
+            proc = self._preprocess_obs(obs)
+            detected.update(self._extract_object_classes(proc))
+            self.obs = proc
+        # 扫描完成后重置时间步
+        self.timestep = 0
+        self.info['time'] = 0
+        scene = self._infer_scene_from_classes(detected)
+        self.current_scene = scene
+        self.info['current_scene'] = scene
+
+    """根据当前观测更新场景类型"""
+    def _update_current_scene(self):
+        classes = self._extract_object_classes(self.obs)
+        scene = self._infer_scene_from_classes(classes)
+        if scene is not None:
+            self.current_scene = scene
+            self.info['current_scene'] = scene
 
     def plan_act_and_preprocess(self, planner_inputs):
         """Function responsible for planning, taking the action and
@@ -120,18 +173,24 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # Reset reward if new long-term goal
         if planner_inputs["new_goal"]:
             self.info["g_reward"] = 0
+        # 更新当前场景信息
+        self._update_current_scene()
         if self.sgm is not None:
             self.sgm.update(self.obs, planner_inputs.get('map_pred'),
-                            planner_inputs.get('pose_pred'))
+                            planner_inputs.get('pose_pred'), room=self.current_scene)
 
+            # Γ矩阵：地点与地点间的可达性
             gamma = self.sgm.place_place_accessibility()
+            # R_obs：每个地点观察到的对象类别矩阵
             R_obs = self.sgm.place_object_matrix(self.args.num_sem_categories)
+            # 当前任务目标的类别索引
             goal_cat = self.info.get('goal_category')
+            # 扩展累计奖励矩阵以匹配新的地点数量
             if self.R.shape[0] < R_obs.shape[0]:
                 new_R = np.zeros((R_obs.shape[0], self.R.shape[1]), dtype=self.R.dtype)
                 new_R[: self.R.shape[0], :] = self.R
                 self.R = new_R
-
+            # 对首次观察到的类别增加奖励，形成经验统计
             if self.R.size:
                 max_val = self.R.max()
                 if max_val <= 0:
@@ -140,6 +199,15 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 inc_mask = (R_obs > 0) & (self.R <= 0)
                 self.R[inc_mask] += delta
 
+                # 根据场景先验增强目标物体概率
+                for idx, node in enumerate(self.sgm.place_nodes):
+                    room = node.get('room')
+                    if room and room in semantic_scene_graph:
+                        for cat in semantic_scene_graph[room]:
+                            if cat < self.R.shape[1]:
+                                self.R[idx, cat] = max(self.R[idx, cat], max_val)
+
+                # 若当前地点未再观测到目标类别，则逐步降低其奖励
                 if (
                     goal_cat is not None
                     and 0 <= goal_cat < self.R.shape[1]
@@ -153,6 +221,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                         self.R[curr_place, goal_cat] = max(
                             0.0, self.R[curr_place, goal_cat] - delta
                         )
+            # 在奖励矩阵中选出最可能存在目标的地点
             if (
                 gamma.size
                 and self.R.size
@@ -160,13 +229,18 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 and 0 <= goal_cat < self.R.shape[1]
             ):
                 goal_place = int(np.argmax(self.R[:, goal_cat]))
+                # 当前所在的地点索引
                 curr_place = len(self.sgm.place_nodes) - 1
+                # 利用Γ矩阵在语义图中执行最短路径搜索
                 path = self.sgm.semantic_shortest_path(
                     gamma, curr_place, goal_place
                 )
+                # 获取路径中下一个要前往的地点
                 if path:
                     tgt_idx = path[1] if len(path) > 1 else path[0]
+                    # 该地点对应的全局位姿
                     pose = self.sgm.place_nodes[tgt_idx]['pose']
+                    # 将全局语义目标写入规划输入，供后续局部规划使用
                     sea_goal = np.zeros_like(planner_inputs.get('map_pred'))
                     r = int(pose[1] * 100.0 / self.args.map_resolution)
                     c = int(pose[0] * 100.0 / self.args.map_resolution)

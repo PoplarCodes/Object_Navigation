@@ -17,13 +17,16 @@ class SemanticGraphMap:
         self.A_io = np.zeros((0, 0), dtype=np.int32)  # image-object
         self.last_image_idx = None
 
-    def update(self, obs, sem_map, pose):
-        """Update graph with a new observation.
-
+    def update(self, obs, sem_map, pose, room=None):
+        """添加新的观测到语义图中，并记录场景类型。
         Args:
             obs: Current observation.
             sem_map: Semantic map prediction.
             pose: Agent pose.
+            obs: 当前观测。
+            sem_map: 语义地图预测。
+            pose: 智能体位姿。
+            room: 当前场景类型字符串。
         """
         # Add image node
         i_idx = len(self.image_nodes)
@@ -37,7 +40,7 @@ class SemanticGraphMap:
 
         # Add place node and connect to image node
         p_idx = len(self.place_nodes)
-        self.place_nodes.append({'pose': pose})
+        self.place_nodes.append({'pose': pose, 'room': room})
         self.A_pi = self._expand_rect(self.A_pi, len(self.place_nodes), len(self.image_nodes))
         self.A_pi[p_idx, i_idx] = 1
 
