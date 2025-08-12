@@ -347,9 +347,10 @@ class NeuralMap:
         ax, ay = agent_pose  # agent's world coordinates (x, y)
         yaw = agent_orientation
         # Determine number of cells for local map grid
-        grid_dim = int(map_size_m / output_resolution)
-        if grid_dim % 2 == 0:
-            grid_dim += 1
+        grid_dim = round(map_size_m / output_resolution)
+        # 这里不再强制将网格维度设为奇数，保持与导航模块中局部地图
+        # 的大小一致，避免生成 241×241 网格时与 240×240 的局部地图
+        # 写入操作发生维度不匹配
         half = grid_dim // 2
         cos_th, sin_th = np.cos(yaw), np.sin(yaw)
         xv, yv = np.meshgrid(np.arange(grid_dim), np.arange(grid_dim))

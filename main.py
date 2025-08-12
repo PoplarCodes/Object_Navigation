@@ -329,10 +329,9 @@ def main():
         # 写入语义通道
         for k in range(args.num_sem_categories):
             local_map[e, 4 + k] = torch.from_numpy((sem == (k + 1)).astype(np.float32)).to(device)
-        # 记录当前局部姿态
-        local_pose[e, 0] = p[0]
-        local_pose[e, 1] = p[1]
-        local_pose[e, 2] = p[2]
+
+        # 记录当前局部姿态，先将 numpy 数组转换为张量，避免类型不匹配
+        local_pose[e, :3] = torch.from_numpy(p[:3]).to(device)
 
     # Compute Global policy input
     locs = local_pose.cpu().numpy()
