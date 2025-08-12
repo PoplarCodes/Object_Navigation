@@ -342,59 +342,28 @@ class NeuralMap:
             self.progressive_enabled = True
 
     def get_local_map(self, agent_pose, agent_orientation, map_size_m=5.0, output_resolution=0.1):
-        """
-        Decode a local egocentric occupancy and semantic map around the agent.
-        Args:
-            agent_pose (tuple): (x, y) position of agent in world.
-            agent_orientation (float): agent's orientation (yaw) in radians.
-            map_size_m (float): size of the local map (meters, length of one side of square).
-            output_resolution (float): cell size for local map output (meters).
-        Returns:
-            occupancy_grid (2D numpy array of float): local occupancy probabilities (values 0-1).
-            semantic_grid (2D numpy array of int): local semantic map (class indices for occupied cells, 0 for free/unknown).
-        """
+        """解码智能体周围的局部占用与语义地图"""
         import numpy as np
         ax, ay = agent_pose  # agent's world coordinates (x, y)
         yaw = agent_orientation
         # Determine number of cells for local map grid
         grid_dim = int(map_size_m / output_resolution)
         if grid_dim % 2 == 0:
-            grid_dim += 1  # make it odd so agent is at center cell
-        half_size = grid_dim // 2
-        # Create a grid of local coordinates (relative to agent)
-        xs = (np.arange(grid_dim) - half_size) * output_resolution
-        ys = (np.arange(grid_dim) - half_size) * output_resolution
-        # We want agent at center (half_size, half_size index) and facing up (towards negative y index).
-        # We'll compute world coords for each grid cell.
-        cos_th = np.cos(-yaw)  # rotate by -yaw to align agent's forward to global axes
-        sin_th = np.sin(-yaw)
-        # Actually, to rotate local->world, we use +yaw as earlier. But here we want each cell's offset in local (where local x is agent's right, local y is agent's forward).
-        # Define local coordinate axes: x_local (right), y_local (forward).
-        cos_th = np.cos(yaw)
-        sin_th = np.sin(yaw)
-        # Prepare coordinate arrays
-        occupancy_grid = np.zeros((grid_dim, grid_dim), dtype=np.float32)
-        semantic_grid = np.zeros((grid_dim, grid_dim), dtype=np.int64)
-        # We will sample the center of each cell (x_local, y_local) then transform to world and query map.
-        # Vectorize sampling:
-        xv, yv = np.meshgrid(np.arange(grid_dim), np.arange(grid_dim))  # xv, yv shape (grid_dim, grid_dim)
+            grid_dim += 1
+        half = grid_dim // 2
+        cos_th, sin_th = np.cos(yaw), np.sin(yaw)
+        xv, yv = np.meshgrid(np.arange(grid_dim), np.arange(grid_dim))
         xv = xv.reshape(-1)
         yv = yv.reshape(-1)
         # Local coordinates relative to agent
-        x_local = (xv - half_size) * output_resolution
-        y_local = (
-                              half_size - yv) * output_resolution  # note: half_size - yv inverts y so that increasing yv (downwards) corresponds to negative local y (behind agent).
-        # Now rotate local offsets to world:
-        world_dx = x_local * cos_th - y_local * sin_th
-        world_dy = x_local * sin_th + y_local * cos_th
-        # Compute world coordinates of each cell center
-        world_x_coords = ax + world_dx
-        world_y_coords = ay + world_dy
-        # Query the neural map model for each of these coordinates
-        coords_tensor = torch.tensor(np.stack([world_x_coords, world_y_coords], axis=1), dtype=torch.float32,
-                                     device=next(self.map_model.parameters()).device)
-        occ_logits, sem_logits, _ = self.map_model(coords_tensor)
-        occ_probs = torch.sigmoid(occ_logits).detach().cpu().numpy()  # occupancy probability for each queried point
+        x_local = (xv - half) * output_resolution
+        y_local = (half - yv) * output_resolution
+        world_x = ax + x_local * cos_th - y_local * sin_th
+        world_y = ay + x_local * sin_th + y_local * cos_th
+        coords = torch.tensor(np.stack([world_x, world_y], axis=1), dtype=torch.float32,
+                              device=next(self.map_model.parameters()).device)
+        occ_logits, sem_logits, _ = self.map_model(coords)
+        occ_probs = torch.sigmoid(occ_logits).detach().cpu().numpy()
         if sem_logits is not None:
             sem_preds = torch.argmax(sem_logits, dim=1).detach().cpu().numpy()
         else:

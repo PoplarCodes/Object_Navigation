@@ -7,14 +7,34 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
+import skimage.morphology
 
-from model import RL_Policy, Semantic_Mapping
+from constants import object_to_scenes
+
+# from model import RL_Policy, Semantic_Mapping
+from model import RL_Policy
+# 引入基于特征平面的神经映射模块
+from neural_map import NeuralMap
 from utils.storage import GlobalRolloutStorage
 from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
+
 os.environ["OMP_NUM_THREADS"] = "1"
+
+
+def select_frontier(explored_map, agent_loc):
+    """从探索图中选择距离当前位置最近的前沿点"""
+    explored = explored_map == 1
+    dilated = skimage.morphology.binary_dilation(explored, skimage.morphology.disk(3))
+    frontier = np.logical_and(dilated, np.logical_not(explored))
+    pts = np.argwhere(frontier)
+    if len(pts) == 0:
+        h, w = explored_map.shape
+        return [min(agent_loc[0], h - 1), min(agent_loc[1], w - 1)]
+    dists = np.linalg.norm(pts - np.array(agent_loc), axis=1)
+    return pts[dists.argmin()].tolist()
 
 
 def main():
@@ -43,15 +63,15 @@ def main():
     logging.info(args)
 
     # Logging and loss variables
-    num_scenes = args.num_processes     #并行场景的数量
+    num_scenes = args.num_processes  # 并行场景的数量
     num_episodes = int(args.num_eval_episodes)
     device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
 
-    g_masks = torch.ones(num_scenes).float().to(device)    #全 1 的张量，用于记录每个场景的掩码信息
+    g_masks = torch.ones(num_scenes).float().to(device)  # 全 1 的张量，用于记录每个场景的掩码信息
 
     best_g_reward = -np.inf
 
-    #为1表示处于评估模式
+    # 为1表示处于评估模式
     if args.eval:
         episode_success = []
         episode_spl = []
@@ -61,13 +81,13 @@ def main():
             episode_spl.append(deque(maxlen=num_episodes))
             episode_dist.append(deque(maxlen=num_episodes))
 
-    #false 0为训练模式
+    # false 0为训练模式
     else:
         episode_success = deque(maxlen=1000)
         episode_spl = deque(maxlen=1000)
         episode_dist = deque(maxlen=1000)
 
-    #进程完成状态
+    # 进程完成状态
     finished = np.zeros((args.num_processes))
     wait_env = np.zeros((args.num_processes))
 
@@ -127,7 +147,7 @@ def main():
     # 4-7 store local map boundaries
     planner_pose_inputs = np.zeros((num_scenes, 7))
 
-    #计算局部地图边界
+    # 计算局部地图边界
     def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
         loc_r, loc_c = agent_loc
         local_w, local_h = local_sizes
@@ -150,16 +170,16 @@ def main():
 
         return [gx1, gx2, gy1, gy2]
 
-    #初始化完整地图和完整姿态
+    # 初始化完整地图和完整姿态
     def init_map_and_pose():
         full_map.fill_(0.)
         full_pose.fill_(0.)
-        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  #智能体初始位置为地图的中心
+        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  # 智能体初始位置为地图的中心
 
         locs = full_pose.cpu().numpy()
-        planner_pose_inputs[:, :3] = locs  #将智能体的完整姿态信息的前三维（x,y,朝向）给规划器的输入信息
+        planner_pose_inputs[:, :3] = locs  # 将智能体的完整姿态信息的前三维（x,y,朝向）给规划器的输入信息
         for e in range(num_scenes):
-            r, c = locs[e, 1], locs[e, 0]  #提取当前场景中智能体的xy
+            r, c = locs[e, 1], locs[e, 0]  # 提取当前场景中智能体的xy
             loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
                             int(c * 100.0 / args.map_resolution)]
 
@@ -175,10 +195,10 @@ def main():
 
         for e in range(num_scenes):
             local_map[e] = full_map[e, :,
-                                    lmb[e, 0]:lmb[e, 1],
-                                    lmb[e, 2]:lmb[e, 3]]
+                           lmb[e, 0]:lmb[e, 1],
+                           lmb[e, 2]:lmb[e, 3]]
             local_pose[e] = full_pose[e] - \
-                torch.from_numpy(origins[e]).to(device).float()
+                            torch.from_numpy(origins[e]).to(device).float()
 
     def init_map_and_pose_for_env(e):
         full_map[e].fill_(0.)
@@ -203,25 +223,25 @@ def main():
 
         local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
         local_pose[e] = full_pose[e] - \
-            torch.from_numpy(origins[e]).to(device).float()
+                        torch.from_numpy(origins[e]).to(device).float()
 
-    #更新内在奖励
+    # 更新内在奖励
     def update_intrinsic_rew(e):
-        prev_explored_area = full_map[e, 1].sum(1).sum(0)  #计算之前探索的区域面积，网格数
+        prev_explored_area = full_map[e, 1].sum(1).sum(0)  # 计算之前探索的区域面积，网格数
         full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-            local_map[e] #环境的局部地图更新到完整地图对应的局部区域，以反映智能体在局部区域的最新探索情况
-        curr_explored_area = full_map[e, 1].sum(1).sum(0)  #当前探索的区域总网格数
+            local_map[e]  # 环境的局部地图更新到完整地图对应的局部区域，以反映智能体在局部区域的最新探索情况
+        curr_explored_area = full_map[e, 1].sum(1).sum(0)  # 当前探索的区域总网格数
 
-        #内在奖励定义为当前探索区域面积减去之前探索的区域面积
+        # 内在奖励定义为当前探索区域面积减去之前探索的区域面积
         intrinsic_rews[e] = curr_explored_area - prev_explored_area
-        intrinsic_rews[e] *= (args.map_resolution / 100.)**2  # to m^2  内在奖励从网格数转换为实际的面积
+        intrinsic_rews[e] *= (args.map_resolution / 100.) ** 2  # to m^2  内在奖励从网格数转换为实际的面积
 
-    #调用函数初始化
+    # 调用函数初始化
     init_map_and_pose()
 
     # 定义全局策略的观测空间
-    #智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
-    ngc = 8 + args.num_sem_categories  #通道数 num_sem_categories = 16
+    # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
+    ngc = 8 + args.num_sem_categories  # 通道数 num_sem_categories = 16
     es = 2
     g_observation_space = gym.spaces.Box(0, 1,
                                          (ngc,
@@ -233,11 +253,22 @@ def main():
                                     shape=(2,), dtype=np.float32)
 
     # 设置全局策略中循环层的隐藏层大小
-    g_hidden_size = args.global_hidden_size  #global_hidden_size = 256
+    g_hidden_size = args.global_hidden_size  # global_hidden_size = 256
 
     # 初始化语义地图模块
-    sem_map_module = Semantic_Mapping(args).to(device)
-    sem_map_module.eval()  #设置为评估模式
+    # sem_map_module = Semantic_Mapping(args).to(device)
+    # sem_map_module.eval()  #设置为评估模式
+    # 为每个并行环境初始化神经隐式地图
+    neural_maps = [
+        NeuralMap(
+            map_size_m=args.map_size_cm / 100.0,
+            num_semantic_classes=args.num_sem_categories,
+            sensor_height=args.camera_height,
+            hfov=args.hfov,
+            img_width=args.frame_width,
+            img_height=args.frame_height
+        ) for _ in range(num_scenes)
+    ]
 
     # Global policy
     g_policy = RL_Policy(g_observation_space.shape, g_action_space,
@@ -271,13 +302,37 @@ def main():
     if args.eval:
         g_policy.eval()
 
-    # Predict semantic map from frame 1
+    # 使用神经隐式地图更新初始局部地图
     poses = torch.from_numpy(np.asarray(
         [infos[env_idx]['sensor_pose'] for env_idx in range(num_scenes)])
     ).float().to(device)
 
-    _, local_map, _, local_pose = \
-        sem_map_module(obs, poses, local_map, local_pose)
+    for e in range(num_scenes):
+        # 取出第 e 个环境的传感器姿态
+        p = poses[e].cpu().numpy()
+        # 提取对应的 RGB 与深度图
+        rgb = obs[e, :3].permute(1, 2, 0).cpu().numpy()
+        depth = obs[e, 3].cpu().numpy()
+        # 使用 with torch.enable_grad() 保证地图更新阶段可以计算梯度
+        with torch.enable_grad():
+            # 更新神经地图参数
+            neural_maps[e].update(tuple(p), rgb, depth)
+        # 解码得到局部占用与语义网格
+        occ, sem = neural_maps[e].get_local_map(
+            (p[0], p[1]), p[2],
+            map_size_m=local_w * args.map_resolution / 100.0,
+            output_resolution=args.map_resolution / 100.0
+        )
+        # 写入局部地图的占用通道与探索通道
+        local_map[e, 0] = torch.from_numpy((occ > 0.5).astype(np.float32)).to(device)
+        local_map[e, 1] = torch.from_numpy(np.ones_like(occ, dtype=np.float32)).to(device)
+        # 写入语义通道
+        for k in range(args.num_sem_categories):
+            local_map[e, 4 + k] = torch.from_numpy((sem == (k + 1)).astype(np.float32)).to(device)
+        # 记录当前局部姿态
+        local_pose[e, 0] = p[0]
+        local_pose[e, 1] = p[1]
+        local_pose[e, 2] = p[2]
 
     # Compute Global policy input
     locs = local_pose.cpu().numpy()
@@ -297,12 +352,11 @@ def main():
         full_map[:, 0:4, :, :])
     global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
     #
-    #修改
-    goal_cat_id = torch.from_numpy(np.asarray(
-        [infos[env_idx]['goal_cat_id'] for env_idx
-         in range(num_scenes)]))
-    #goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
-
+    # 修改
+    goal_cat_list = [infos[env_idx]['goal_cat_id'] for env_idx in range(num_scenes)]
+    goal_cat_id = torch.from_numpy(np.asarray(goal_cat_list))
+    target_scenes = [object_to_scenes.get(gc, [None])[0] for gc in goal_cat_list]
+    # goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
 
     extras = torch.zeros(num_scenes, 2)
     extras[:, 0] = global_orientation[:, 0]
@@ -327,6 +381,14 @@ def main():
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
 
+    for e in range(num_scenes):
+        if target_scenes[e] and infos[e].get('room_type') != target_scenes[e]:
+            r, c = locs[e, 1], locs[e, 0]
+            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                            int(c * 100.0 / args.map_resolution)]
+            explored = local_map[e, 1].cpu().numpy()
+            global_goals[e] = select_frontier(explored, [loc_r, loc_c])
+
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
     for e in range(num_scenes):
@@ -344,7 +406,7 @@ def main():
         if args.visualize or args.print_images:
             local_map[e, -1, :, :] = 1e-5
             p_input['sem_map_pred'] = local_map[e, 4:, :, :
-                                                ].argmax(0).cpu().numpy()
+                                      ].argmax(0).cpu().numpy()
 
     obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
 
@@ -357,7 +419,6 @@ def main():
 
     # 用于存储奖励数据
     global_eps_rewards = []
-
 
     for step in range(args.num_training_frames // args.num_processes + 1):
         if finished.sum() == args.num_processes:
@@ -401,8 +462,25 @@ def main():
              in range(num_scenes)])
         ).float().to(device)
 
-        _, local_map, _, local_pose = \
-            sem_map_module(obs, poses, local_map, local_pose)
+        for e in range(num_scenes):
+            p = poses[e].cpu().numpy()
+            rgb = obs[e, :3].permute(1, 2, 0).cpu().numpy()
+            depth = obs[e, 3].cpu().numpy()
+            # 同样在训练循环中启用梯度以更新地图
+            with torch.enable_grad():
+                neural_maps[e].update(tuple(p), rgb, depth)
+            occ, sem = neural_maps[e].get_local_map(
+                (p[0], p[1]), p[2],
+                map_size_m=local_w * args.map_resolution / 100.0,
+                output_resolution=args.map_resolution / 100.0
+            )
+            local_map[e, 0] = torch.from_numpy((occ > 0.5).astype(np.float32)).to(device)
+            local_map[e, 1] = torch.from_numpy(np.ones_like(occ, dtype=np.float32)).to(device)
+            for k in range(args.num_sem_categories):
+                local_map[e, 4 + k] = torch.from_numpy((sem == (k + 1)).astype(np.float32)).to(device)
+            local_pose[e, 0] = p[0]
+            local_pose[e, 1] = p[1]
+            local_pose[e, 2] = p[2]
 
         locs = local_pose.cpu().numpy()
         planner_pose_inputs[:, :3] = locs + origins
@@ -428,7 +506,7 @@ def main():
                 full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
                     local_map[e]
                 full_pose[e] = local_pose[e] + \
-                    torch.from_numpy(origins[e]).to(device).float()
+                               torch.from_numpy(origins[e]).to(device).float()
 
                 locs = full_pose[e].cpu().numpy()
                 r, c = locs[1], locs[0]
@@ -444,10 +522,10 @@ def main():
                               lmb[e][0] * args.map_resolution / 100.0, 0.]
 
                 local_map[e] = full_map[e, :,
-                                        lmb[e, 0]:lmb[e, 1],
-                                        lmb[e, 2]:lmb[e, 3]]
+                               lmb[e, 0]:lmb[e, 1],
+                               lmb[e, 2]:lmb[e, 3]]
                 local_pose[e] = full_pose[e] - \
-                    torch.from_numpy(origins[e]).to(device).float()
+                                torch.from_numpy(origins[e]).to(device).float()
 
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
@@ -458,10 +536,11 @@ def main():
                     full_map[:, 0:4, :, :])
             global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
 
-            goal_cat_id = torch.from_numpy(np.asarray(
-                [infos[env_idx]['goal_cat_id'] for env_idx
-                 in range(num_scenes)]))
-            #goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
+            goal_cat_list = [infos[env_idx]['goal_cat_id'] for env_idx in range(num_scenes)]
+            goal_cat_id = torch.from_numpy(np.asarray(goal_cat_list))
+            target_scenes = [object_to_scenes.get(gc, [None])[0] for gc in goal_cat_list]
+
+            # goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
 
             extras[:, 0] = global_orientation[:, 0]
             extras[:, 1] = goal_cat_id
@@ -474,7 +553,7 @@ def main():
 
             g_process_rewards += g_reward.cpu().numpy()
             g_total_rewards = g_process_rewards * \
-                (1 - g_masks.cpu().numpy())
+                              (1 - g_masks.cpu().numpy())
             g_process_rewards *= g_masks.cpu().numpy()
             per_step_g_rewards.append(np.mean(g_reward.cpu().numpy()))
 
@@ -482,7 +561,7 @@ def main():
                 for total_rew in g_total_rewards:
                     if total_rew != 0:
                         g_episode_rewards.append(total_rew)
-                #记录每个episode的平均奖励
+                # 记录每个episode的平均奖励
                 global_eps_rewards.append(np.mean(g_total_rewards))
 
             # Add samples to global policy storage
@@ -512,6 +591,14 @@ def main():
             global_goals = [[min(x, int(local_w - 1)),
                              min(y, int(local_h - 1))]
                             for x, y in global_goals]
+
+            for e in range(num_scenes):
+                if target_scenes[e] and infos[e].get('room_type') != target_scenes[e]:
+                    r, c = locs[e, 1], locs[e, 0]
+                    loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                    int(c * 100.0 / args.map_resolution)]
+                    explored = local_map[e, 1].cpu().numpy()
+                    global_goals[e] = select_frontier(explored, [loc_r, loc_c])
 
             g_reward = 0
             g_masks = torch.ones(num_scenes).float().to(device)
@@ -550,7 +637,7 @@ def main():
             if args.visualize or args.print_images:
                 local_map[e, -1, :, :] = 1e-5
                 p_input['sem_map_pred'] = local_map[e, 4:, :,
-                                                    :].argmax(0).cpu().numpy()
+                                          :].argmax(0).cpu().numpy()
 
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
@@ -674,7 +761,7 @@ def main():
     # Print and save model performance numbers during evaluation
     if args.eval:
         print("Dumping eval details...")
-        
+
         total_success = []
         total_spl = []
         total_dist = []
@@ -696,7 +783,7 @@ def main():
 
         print(log)
         logging.info(log)
-            
+
         # Save the spl per category
         log = "Success | SPL per category\n"
         for key in success_per_category:
@@ -723,6 +810,7 @@ def main():
     plt.ylabel("Reward")
     plt.legend()
     plt.show()
+
 
 if __name__ == "__main__":
     main()
