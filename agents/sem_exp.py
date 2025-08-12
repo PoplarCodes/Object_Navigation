@@ -6,6 +6,7 @@ import skimage.morphology
 from PIL import Image
 from torchvision import transforms
 import torch
+import time
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
@@ -67,6 +68,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.prev_scene = None
         self.scanned_target_scene = False
         self.scene_step_count = 0
+        self.scene_start_time = None
 
         if args.visualize or args.print_images:
             self.legend = cv2.imread('docs/legend.png')
@@ -96,7 +98,9 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.last_action = None
 
         self.scene_step_count = 0
+        self.scene_start_time = time.time()
         self.info['scene_step'] = 0
+        self.info['scene_time'] = 0.0
         self.info['force_scene_change'] = False
 
         if args.visualize or args.print_images:
@@ -140,6 +144,13 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # 扫描完成后重置时间步
         self.timestep = 0
         self.info['time'] = 0
+        self.info['episode_step'] = 0
+        self.info['episode_time'] = 0.0
+        self.scene_step_count = 0
+        self.scene_start_time = time.time()
+        self.info['scene_step'] = 0
+        self.info['scene_time'] = 0.0
+        self.episode_start_time = time.time()
         scene = self._infer_scene_from_classes(detected)
         self.current_scene = scene
         self.info['current_scene'] = scene
@@ -151,6 +162,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         if scene is not None:
             if scene != self.current_scene:
                 self.scene_step_count = 0
+                self.scene_start_time = time.time()
+                self.info['scene_time'] = 0.0
             self.prev_scene = self.current_scene
             self.current_scene = scene
             self.info['current_scene'] = scene
@@ -232,10 +245,13 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.info["g_reward"] = 0
         # 更新当前场景信息
         self._update_current_scene()
+        scene_elapsed_time = time.time() - self.scene_start_time
         self.scene_step_count += 1
         self.info['scene_step'] = self.scene_step_count
+        self.info['scene_time'] = scene_elapsed_time
         force_change = (
-            self.scene_step_count >= self.args.scene_max_steps
+            (self.scene_step_count >= self.args.scene_max_steps or
+            scene_elapsed_time >= self.args.scene_max_time)
             and planner_inputs.get('found_goal') == 0
         )
         self.info['force_scene_change'] = force_change
@@ -356,7 +372,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
             info['g_reward'] += rew
             if (
-                info.get('time', 0) >= self.args.max_episode_length
+                (info.get('time', 0) >= self.args.max_episode_length or
+                 info.get('episode_time', 0) >= self.args.episode_max_time)
                 and planner_inputs.get('found_goal') == 0
             ):
                 info['episode_failed'] = True
@@ -646,8 +663,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         # Add ground-truth semantic map
         if hasattr(self, 'gt_sem_map') and self.gt_sem_map is not None:
-            gt_sem = self.gt_sem_map[:, gx1:gx2, gy1:gy2]
-            gt_sem = np.argmax(gt_sem, axis=0) + 5
+            # 使用全局语义地图，不再裁剪局部区域
+            gt_sem = np.argmax(self.gt_sem_map, axis=0) + 5
             gt_sem_vis = Image.new("P", (gt_sem.shape[1], gt_sem.shape[0]))
             gt_sem_vis.putpalette(color_pal)
             gt_sem_vis.putdata(gt_sem.flatten().astype(np.uint8))
@@ -656,6 +673,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             gt_sem_vis = gt_sem_vis[:, :, [2, 1, 0]]
             gt_sem_vis = cv2.resize(gt_sem_vis, (480, 480),
                                     interpolation=cv2.INTER_NEAREST)
+            # 将真实语义地图放置在右侧面板
             self.vis_image[50:530, 1165:1645] = gt_sem_vis
 
 
@@ -674,7 +692,15 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
 
         if hasattr(self, 'gt_sem_map') and self.gt_sem_map is not None:
-            agent_arrow = vu.get_contour_points(pos, origin=(1165, 50))
+            #agent_arrow = vu.get_contour_points(pos, origin=(1165, 50))
+            # 计算机器人在全局语义地图中的像素坐标并绘制
+            full_h, full_w = self.gt_sem_map.shape[1], self.gt_sem_map.shape[2]
+            pos_full = (
+                start_x * 100. / args.map_resolution * 480 / full_h,
+                (full_w - start_y * 100. / args.map_resolution) * 480 / full_w,
+                np.deg2rad(-start_o),
+            )
+            agent_arrow = vu.get_contour_points(pos_full, origin=(1165, 50))
             cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
 
         if args.visualize:
