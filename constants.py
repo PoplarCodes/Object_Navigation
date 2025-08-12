@@ -19,6 +19,7 @@ scenes["train"] = [
     'Stockman',
     'Woodbine',
 ]
+
 scenes["val"] = [
     'Collierville',
     'Corozal',
@@ -44,6 +45,7 @@ coco_categories = {
     "cup": 13,
     "bottle": 14
 }
+
 coco_categories_mapping = {
     56: 0,  # chair
     57: 1,  # couch
@@ -61,6 +63,7 @@ coco_categories_mapping = {
     41: 13,  # cup
     39: 14,  # bottle
 }
+
 color_palette = [
     1.0, 1.0, 1.0,
     0.6, 0.6, 0.6,
@@ -82,26 +85,3 @@ color_palette = [
     0.9218, 0.66, 0.9400000000000001,
     0.9400000000000001, 0.66, 0.8531999999999998,
     0.9400000000000001, 0.66, 0.748199999999999]
-
-# 静态语义场景图：场景 -> 典型物体类别列表（类别用COCO定义的索引表示）
-semantic_scene_graph = {
-    "bedroom": [3, 0, 10, 11, 2, 12],      # 卧室常见: 床(3), 椅子(0), 书(10), 时钟(11), 植物(2), 花瓶(12)
-    "living_room": [1, 0, 5, 6, 2, 12, 11, 13, 14],  # 客厅常见: 沙发(1), 椅子(0), 电视(5), 餐桌(6), 植物(2), 花瓶(12), 时钟(11), 杯子(13), 瓶子(14)
-    "kitchen": [7, 8, 9, 6, 0, 13, 14],    # 厨房常见: 烤箱(7), 水槽(8), 冰箱(9), 餐桌(6), 椅子(0), 杯子(13), 瓶子(14)
-    "toilet": [4, 8, 14],                # 厕所常见: 马桶(4), 水槽(8), 瓶子(14)
-    "study": [10, 0, 11, 2, 12]         # 书房常见: 书(10), 椅子(0), 时钟(11), 植物(2), 花瓶(12)
-}
-
-# 物体类别到场景的概率映射，统计每个类别在不同场景中的出现权重
-category_to_scene = {}
-for scene, cats in semantic_scene_graph.items():
-    for c in cats:
-        # 初始化类别的场景字典，并累加该类别在场景中的出现次数
-        category_to_scene.setdefault(c, {})
-        category_to_scene[c][scene] = category_to_scene[c].get(scene, 0) + 1
-
-# 将出现次数归一化为概率，并提供每个类别最可能的场景快捷访问
-for c, scene_counts in category_to_scene.items():
-    total = sum(scene_counts.values())
-    for scene in scene_counts:
-        scene_counts[scene] /= total

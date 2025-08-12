@@ -10,7 +10,6 @@ from habitat.datasets.pointnav.pointnav_dataset import PointNavDatasetV1
 from habitat import Config, Env, RLEnv, VectorEnv, make_dataset
 
 from agents.sem_exp import Sem_Exp_Env_Agent
-from agents.utils import SemanticEnvironmentAtlas
 from .objectgoal_env import ObjectGoal_Env
 
 from .utils.vector_env import VectorEnv
@@ -23,13 +22,9 @@ def make_env_fn(args, config_env, rank):
     config_env.freeze()
 
     if args.agent == "sem_exp":
-        atlas = (SemanticEnvironmentAtlas(args.sea_update_interval)
-                 if getattr(args, "use_sea", False) else None)
         env = Sem_Exp_Env_Agent(args=args, rank=rank,
                                 config_env=config_env,
-                                #dataset=dataset
-                                dataset=dataset,
-                                atlas=atlas
+                                dataset=dataset
                                 )
     else:
         env = ObjectGoal_Env(args=args, rank=rank,

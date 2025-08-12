@@ -1,3 +1,4 @@
+
 import argparse
 import time
 
@@ -14,15 +15,21 @@ import detectron2.data.transforms as T
 
 from constants import coco_categories_mapping
 
+
 class SemanticPredMaskRCNN():
 
     def __init__(self, args):
         self.segmentation_model = ImageSegmentation(args)
         self.args = args
+        # self.device = args.device
+        # # 使用更高精度的预训练模型
+        # self.model = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.COCO_V1)
+        # self.model.to(self.device)
+        # self.model.eval()
+        # self.segmentation_model = self.model
 
     def get_prediction(self, img):
         args = self.args
-        # 将输入图像从RGB转换为BGR（Detectron2模型要求BGR格式）
         image_list = []
         img = img[:, :, ::-1]
         image_list.append(img)

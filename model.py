@@ -6,7 +6,7 @@ import numpy as np
 from utils.distributions import Categorical, DiagGaussian
 from utils.model import get_grid, ChannelPool, Flatten, NNBase
 import envs.utils.depth_utils as du
-from agents.utils import SemanticEnvironmentAtlas
+
 
 class Goal_Oriented_Semantic_Policy(NNBase):
 
@@ -56,6 +56,9 @@ class Goal_Oriented_Semantic_Policy(NNBase):
         x = nn.ReLU()(self.linear2(x))
 
         return self.critic_linear(x).squeeze(-1), x, rnn_hxs
+
+
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15
 class RL_Policy(nn.Module):
 
     def __init__(self, obs_shape, action_space, model_type=0,
@@ -125,6 +128,7 @@ class RL_Policy(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs
 
+
 class Semantic_Mapping(nn.Module):
 
     """
@@ -149,11 +153,6 @@ class Semantic_Mapping(nn.Module):
         self.exp_pred_threshold = args.exp_pred_threshold
         self.map_pred_threshold = args.map_pred_threshold
         self.num_sem_categories = args.num_sem_categories
-
-        self.use_sea = getattr(args, "use_sea", False)
-        self.sea_update_interval = getattr(args, "sea_update_interval", 1)
-        self.atlas = (SemanticEnvironmentAtlas(self.sea_update_interval)
-                      if self.use_sea else None)
 
         self.max_height = int(360 / self.z_resolution)
         self.min_height = int(-40 / self.z_resolution)
@@ -282,11 +281,4 @@ class Semantic_Mapping(nn.Module):
 
         map_pred, _ = torch.max(maps2, 1)
 
-       # return fp_map_pred, map_pred, pose_pred, current_poses
-        sea_feats = None
-        if self.atlas is not None:
-            self.atlas.update(map_pred.detach().cpu().numpy(),
-                              current_poses.detach().cpu().numpy())
-            sea_feats = self.atlas.query(None)
-
-        return fp_map_pred, map_pred, pose_pred, current_poses, sea_feats
+        return fp_map_pred, map_pred, pose_pred, current_poses

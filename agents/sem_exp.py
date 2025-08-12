@@ -6,15 +6,13 @@ import skimage.morphology
 from PIL import Image
 from torchvision import transforms
 import torch
-import time
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
-from agents.utils import SemanticEnvironmentAtlas, SemanticGraphMap
-from constants import color_palette, semantic_scene_graph, category_to_scene
-
+from constants import color_palette
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
+
 
 
 class Sem_Exp_Env_Agent(ObjectGoal_Env):
@@ -23,17 +21,10 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
     """
 
-    #def __init__(self, args, rank, config_env, dataset):
-    def __init__(self, args, rank, config_env, dataset, atlas: SemanticEnvironmentAtlas = None):
+    def __init__(self, args, rank, config_env, dataset):
 
         self.args = args
         super().__init__(args, rank, config_env, dataset)
-        # 语义环境图谱，跨时间存储场景中对象的语义观测
-        self.atlas = atlas
-        # 语义图结构，维护地点、图像和对象节点及其关系
-        self.sgm = SemanticGraphMap()
-        # 地点-对象的奖励矩阵，记录各地点出现过的语义类别
-        self.R = np.zeros((0, args.num_sem_categories), dtype=np.float32)
 
         self.device = args.device
 
@@ -63,13 +54,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.last_action = None
         self.count_forward_actions = None
 
-        # 当前场景类型
-        self.current_scene = None
-        self.prev_scene = None
-        self.scanned_target_scene = False
-        self.scene_step_count = 0
-        self.scene_start_time = None
-
         if args.visualize or args.print_images:
             self.legend = cv2.imread('docs/legend.png')
             self.vis_image = None
@@ -81,8 +65,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         obs, info = super().reset()
         obs = self._preprocess_obs(obs)
 
-        self.obs = obs
-        self.info = info
         self.obs_shape = obs.shape
 
         # Episode initializations
@@ -97,121 +79,10 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                          args.map_size_cm / 100.0 / 2.0, 0.]
         self.last_action = None
 
-        self.scene_step_count = 0
-        self.scene_start_time = time.time()
-        self.info['scene_step'] = 0
-        self.info['scene_time'] = 0.0
-        self.info['force_scene_change'] = False
-
         if args.visualize or args.print_images:
             self.vis_image = vu.init_vis_image(self.goal_name, self.legend)
 
-        # 初始全景扫描，确定当前房间类型
-        self.prev_scene = None
-        self.scanned_target_scene = False
-        self._panoramic_scan()
-        return self.obs, self.info
-
-    """从带有语义通道的状态中提取出现的物体类别"""
-    def _extract_object_classes(self, state):
-        """从带有语义通道的状态中提取出现的物体类别"""
-        sem = state[4:, :, :]
-        sem_flat = sem.reshape(sem.shape[0], -1)
-        classes = np.where(sem_flat.sum(axis=1) > 0)[0]
-        return set(classes.tolist())
-
-    """根据观测到的物体类别集合推断场景类型"""
-    def _infer_scene_from_classes(self, classes):
-        if 3 in classes:
-            return "bedroom"
-        if 4 in classes:
-            return "toilet"
-        best_scene, best_score = None, -1
-        for scene, cats in semantic_scene_graph.items():
-            score = sum(1 for c in classes if c in cats)
-            if score > best_score:
-                best_scene, best_score = scene, score
-        return best_scene
-
-    """原地旋转一圈收集观测信息并推断当前房间类型"""
-    def _panoramic_scan(self):
-        detected = self._extract_object_classes(self.obs)
-        for _ in range(12):
-            obs, _, _, _ = super().step({'action': 3})  # TURN_RIGHT
-            proc = self._preprocess_obs(obs)
-            detected.update(self._extract_object_classes(proc))
-            self.obs = proc
-        # 扫描完成后重置时间步
-        self.timestep = 0
-        self.info['time'] = 0
-        self.info['episode_step'] = 0
-        self.info['episode_time'] = 0.0
-        self.scene_step_count = 0
-        self.scene_start_time = time.time()
-        self.info['scene_step'] = 0
-        self.info['scene_time'] = 0.0
-        self.episode_start_time = time.time()
-        scene = self._infer_scene_from_classes(detected)
-        self.current_scene = scene
-        self.info['current_scene'] = scene
-
-    """根据当前观测更新场景类型"""
-    def _update_current_scene(self):
-        classes = self._extract_object_classes(self.obs)
-        scene = self._infer_scene_from_classes(classes)
-        if scene is not None:
-            if scene != self.current_scene:
-                self.scene_step_count = 0
-                self.scene_start_time = time.time()
-                self.info['scene_time'] = 0.0
-            self.prev_scene = self.current_scene
-            self.current_scene = scene
-            self.info['current_scene'] = scene
-
-    def _get_target_scene(self):
-        goal_cat = self.info.get('goal_cat_id')
-        if goal_cat is None:
-            return None
-        scene_probs = category_to_scene.get(int(goal_cat))
-        if scene_probs:
-            return max(scene_probs, key=scene_probs.get)
-        return None
-
-    def _quick_scan(self, goal_cat_id):
-        actions = [2, 3, 3]  # left 30°, back, right 30°
-        for act in actions:
-            obs, _, _, info = super().step({'action': act})
-            proc = self._preprocess_obs(obs)
-            self.obs = proc
-            self.info = info
-            classes = self._extract_object_classes(proc)
-            if goal_cat_id in classes:
-                return True
-        return False
-
-    def _estimate_goal_distance(self, goal_cat_id):
-        sem = self.obs[4:, :, :]
-        if goal_cat_id >= sem.shape[0]:
-            return None
-        mask = sem[goal_cat_id] > 0
-        if not mask.any():
-            return None
-        depth = self.obs[3]
-        return float(depth[mask].min()) / 100.0
-
-    def _approach_and_finish(self, goal_cat_id, stop_dist=5.0):
-        dist = self._estimate_goal_distance(goal_cat_id)
-        while dist is not None and dist > stop_dist:
-            obs, _, _, info = super().step({'action': 1})
-            proc = self._preprocess_obs(obs)
-            self.obs = proc
-            self.info = info
-            dist = self._estimate_goal_distance(goal_cat_id)
-        obs, rew, _, info = super().step({'action': 0})
-        proc = self._preprocess_obs(obs)
-        self.obs = proc
-        self.info = info
-        return proc, rew, True, info
+        return obs, info
 
     def plan_act_and_preprocess(self, planner_inputs):
         """Function responsible for planning, taking the action and
@@ -243,115 +114,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # Reset reward if new long-term goal
         if planner_inputs["new_goal"]:
             self.info["g_reward"] = 0
-        # 更新当前场景信息
-        self._update_current_scene()
-        scene_elapsed_time = time.time() - self.scene_start_time
-        self.scene_step_count += 1
-        self.info['scene_step'] = self.scene_step_count
-        self.info['scene_time'] = scene_elapsed_time
-        force_change = (
-            (self.scene_step_count >= self.args.scene_max_steps or
-            scene_elapsed_time >= self.args.scene_max_time)
-            and planner_inputs.get('found_goal') == 0
-        )
-        self.info['force_scene_change'] = force_change
-        target_scene = self._get_target_scene()
-        if (
-            not self.scanned_target_scene
-            and target_scene is not None
-            and self.current_scene == target_scene
-        ):
-            self.scanned_target_scene = True
-            goal_cat_id = self.info.get('goal_cat_id')
-            if goal_cat_id is not None and self._quick_scan(goal_cat_id):
-                return self._approach_and_finish(goal_cat_id)
-            else:
-                self.info['curiosity_bonus'] = 1
-        if self.sgm is not None:
-            self.sgm.update(self.obs, planner_inputs.get('map_pred'),
-                            planner_inputs.get('pose_pred'), room=self.current_scene)
 
-            # Γ矩阵：地点与地点间的可达性
-            gamma = self.sgm.place_place_accessibility()
-            # R_obs：每个地点观察到的对象类别矩阵
-            R_obs = self.sgm.place_object_matrix(self.args.num_sem_categories)
-            # 当前任务目标的类别索引
-            goal_cat = self.info.get('goal_cat_id')
-            # 扩展累计奖励矩阵以匹配新的地点数量
-            if self.R.shape[0] < R_obs.shape[0]:
-                new_R = np.zeros((R_obs.shape[0], self.R.shape[1]), dtype=self.R.dtype)
-                new_R[: self.R.shape[0], :] = self.R
-                self.R = new_R
-            # 对首次观察到的类别增加奖励，形成经验统计
-            if self.R.size:
-                max_val = self.R.max()
-                if max_val <= 0:
-                    max_val = 1.0
-                delta = 0.1 * max_val
-                inc_mask = (R_obs > 0) & (self.R <= 0)
-                self.R[inc_mask] += delta
 
-                # 根据场景先验增强目标物体概率
-                for idx, node in enumerate(self.sgm.place_nodes):
-                    room = node.get('room')
-                    if room and room in semantic_scene_graph:
-                        for cat in semantic_scene_graph[room]:
-                            if cat < self.R.shape[1]:
-                                self.R[idx, cat] = max(self.R[idx, cat], max_val)
-
-                # 若当前地点未再观测到目标类别，则逐步降低其奖励
-                if (
-                    goal_cat is not None
-                    and 0 <= goal_cat < self.R.shape[1]
-                ):
-                    curr_place = len(self.sgm.place_nodes) - 1
-                    if (
-                        curr_place < R_obs.shape[0]
-                        and self.R[curr_place, goal_cat] > 0
-                        and R_obs[curr_place, goal_cat] == 0
-                    ):
-                        self.R[curr_place, goal_cat] = max(
-                            0.0, self.R[curr_place, goal_cat] - delta
-                        )
-            # 在奖励矩阵中选出最可能存在目标的地点
-            if (
-                gamma.size
-                and self.R.size
-                and goal_cat is not None
-                and 0 <= goal_cat < self.R.shape[1]
-            ):
-                goal_place = int(np.argmax(self.R[:, goal_cat]))
-                # 当前所在的地点索引
-                curr_place = len(self.sgm.place_nodes) - 1
-                # 利用Γ矩阵在语义图中执行最短路径搜索
-                path = self.sgm.semantic_shortest_path(
-                    gamma, curr_place, goal_place
-                )
-                # 获取路径中下一个要前往的地点
-                if path:
-                    tgt_idx = path[1] if len(path) > 1 else path[0]
-                    # 该地点对应的全局位姿
-                    pose = self.sgm.place_nodes[tgt_idx]['pose']
-                    # 将全局语义目标写入规划输入，供后续局部规划使用
-                    sea_goal = np.zeros_like(planner_inputs.get('map_pred'))
-                    r = int(pose[1] * 100.0 / self.args.map_resolution)
-                    c = int(pose[0] * 100.0 / self.args.map_resolution)
-                    r = np.clip(r, 0, sea_goal.shape[0] - 1)
-                    c = np.clip(c, 0, sea_goal.shape[1] - 1)
-                    sea_goal[r, c] = 1
-                    planner_inputs['sea_goal'] = sea_goal
-
-        if self.atlas is not None:
-            atlas_goal = self.atlas.query(
-                self.info.get('goal_cat_id')
-            )
-            if atlas_goal is not None:
-                if planner_inputs.get('sea_goal') is not None:
-                    planner_inputs['sea_goal'] = np.maximum(
-                        planner_inputs['sea_goal'], atlas_goal
-                    )
-                else:
-                    planner_inputs['sea_goal'] = atlas_goal
 
         action = self._plan(planner_inputs)
 
@@ -365,18 +129,12 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             obs, rew, done, info = super().step(action)
 
             # preprocess obs
-            obs = self._preprocess_obs(obs)
+            obs = self._preprocess_obs(obs) 
             self.last_action = action['action']
             self.obs = obs
             self.info = info
 
             info['g_reward'] += rew
-            if (
-                (info.get('time', 0) >= self.args.max_episode_length or
-                 info.get('episode_time', 0) >= self.args.episode_max_time)
-                and planner_inputs.get('found_goal') == 0
-            ):
-                info['episode_failed'] = True
 
             return obs, rew, done, info
 
@@ -407,9 +165,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # Get Map prediction
         map_pred = np.rint(planner_inputs['map_pred'])
         goal = planner_inputs['goal']
-        sea_goal = planner_inputs.get('sea_goal')
-        if sea_goal is not None:
-            goal = np.maximum(goal, sea_goal)
 
         # Get pose prediction and global policy planning window
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = \
@@ -438,7 +193,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 vu.draw_line(last_start, start,
                              self.visited_vis[gx1:gx2, gy1:gy2])
 
-        # 碰撞检测
+        # Collision check
         if self.last_action == 1:
             x1, y1, t1 = self.last_loc
             x2, y2, _ = self.curr_loc
@@ -455,7 +210,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 self.col_width = 1
 
             dist = pu.get_l2_distance(x1, x2, y1, y2)
-            if dist < args.collision_threshold:  # 发生碰撞
+            if dist < args.collision_threshold:  # Collision
                 width = self.col_width
                 for i in range(length):
                     for j in range(width):
@@ -472,27 +227,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                                                     self.collision_map.shape)
                         self.collision_map[r, c] = 1
 
-        #stg, stop = self._get_stg(map_pred, start, np.copy(goal),
-                                  #planning_window)
-
-            # 前进计数器：连续前进但无位移则累加
-            if dist < args.collision_threshold:
-                self.count_forward_actions += 1
-            else:
-                self.count_forward_actions = 0
-        else:
-            self.count_forward_actions = 0
-
-        # 超过阈值认为卡死，触发恢复动作（左转）
-        if self.count_forward_actions >= args.stuck_forward_threshold:
-            self.count_forward_actions = 0
-            return 2
-
-        stg, stop, replan = self._get_stg(map_pred, start, np.copy(goal),planning_window)
-
-        # FMM 规划器建议重规划时，执行左转以摆脱局部最小值
-        if replan:
-            return 2
+        stg, stop = self._get_stg(map_pred, start, np.copy(goal),
+                                  planning_window)
 
         # Deterministic Local Policy
         if stop and planner_inputs['found_goal'] == 1:
@@ -552,13 +288,12 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         goal = 1 - goal * 1.
         planner.set_multi_goal(goal)
 
-        visited_local = self.visited[gx1:gx2, gy1:gy2][x1:x2, y1:y2]
-
         state = [start[0] - x1 + 1, start[1] - y1 + 1]
-        stg_x, stg_y, replan, stop = planner.get_short_term_goal(state, visited_local, self.args.visited_penalty)
+        stg_x, stg_y, _, stop = planner.get_short_term_goal(state)
+
         stg_x, stg_y = stg_x + x1 - 1, stg_y + y1 - 1
 
-        return (stg_x, stg_y), stop, replan
+        return (stg_x, stg_y), stop
 
     def _preprocess_obs(self, obs, use_seg=True):
         args = self.args
@@ -661,22 +396,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         self.vis_image[50:530, 15:655] = self.rgb_vis
         self.vis_image[50:530, 670:1150] = sem_map_vis
 
-        # Add ground-truth semantic map
-        if hasattr(self, 'gt_sem_map') and self.gt_sem_map is not None:
-            # 使用全局语义地图，不再裁剪局部区域
-            gt_sem = np.argmax(self.gt_sem_map, axis=0) + 5
-            gt_sem_vis = Image.new("P", (gt_sem.shape[1], gt_sem.shape[0]))
-            gt_sem_vis.putpalette(color_pal)
-            gt_sem_vis.putdata(gt_sem.flatten().astype(np.uint8))
-            gt_sem_vis = gt_sem_vis.convert("RGB")
-            gt_sem_vis = np.flipud(gt_sem_vis)
-            gt_sem_vis = gt_sem_vis[:, :, [2, 1, 0]]
-            gt_sem_vis = cv2.resize(gt_sem_vis, (480, 480),
-                                    interpolation=cv2.INTER_NEAREST)
-            # 将真实语义地图放置在右侧面板
-            self.vis_image[50:530, 1165:1645] = gt_sem_vis
-
-
         pos = (
             (start_x * 100. / args.map_resolution - gy1)
             * 480 / map_pred.shape[0],
@@ -690,18 +409,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                  int(color_palette[10] * 255),
                  int(color_palette[9] * 255))
         cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
-
-        if hasattr(self, 'gt_sem_map') and self.gt_sem_map is not None:
-            #agent_arrow = vu.get_contour_points(pos, origin=(1165, 50))
-            # 计算机器人在全局语义地图中的像素坐标并绘制
-            full_h, full_w = self.gt_sem_map.shape[1], self.gt_sem_map.shape[2]
-            pos_full = (
-                start_x * 100. / args.map_resolution * 480 / full_h,
-                (full_w - start_y * 100. / args.map_resolution) * 480 / full_w,
-                np.deg2rad(-start_o),
-            )
-            agent_arrow = vu.get_contour_points(pos_full, origin=(1165, 50))
-            cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
 
         if args.visualize:
             # Displaying the image
