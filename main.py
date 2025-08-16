@@ -7,14 +7,8 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
-import skimage.morphology
 
-from constants import object_to_scenes
-
-# from model import RL_Policy, Semantic_Mapping
-from model import RL_Policy
-# 引入基于特征平面的神经映射模块
-from neural_map import NeuralMap
+from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
 from envs import make_vec_envs
 from arguments import get_args
@@ -22,19 +16,6 @@ import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
 
 os.environ["OMP_NUM_THREADS"] = "1"
-
-
-def select_frontier(explored_map, agent_loc):
-    """从探索图中选择距离当前位置最近的前沿点"""
-    explored = explored_map == 1
-    dilated = skimage.morphology.binary_dilation(explored, skimage.morphology.disk(3))
-    frontier = np.logical_and(dilated, np.logical_not(explored))
-    pts = np.argwhere(frontier)
-    if len(pts) == 0:
-        h, w = explored_map.shape
-        return [min(agent_loc[0], h - 1), min(agent_loc[1], w - 1)]
-    dists = np.linalg.norm(pts - np.array(agent_loc), axis=1)
-    return pts[dists.argmin()].tolist()
 
 
 def main():
@@ -256,19 +237,8 @@ def main():
     g_hidden_size = args.global_hidden_size  # global_hidden_size = 256
 
     # 初始化语义地图模块
-    # sem_map_module = Semantic_Mapping(args).to(device)
-    # sem_map_module.eval()  #设置为评估模式
-    # 为每个并行环境初始化神经隐式地图
-    neural_maps = [
-        NeuralMap(
-            map_size_m=args.map_size_cm / 100.0,
-            num_semantic_classes=args.num_sem_categories,
-            sensor_height=args.camera_height,
-            hfov=args.hfov,
-            img_width=args.frame_width,
-            img_height=args.frame_height
-        ) for _ in range(num_scenes)
-    ]
+    sem_map_module = Semantic_Mapping(args).to(device)
+    sem_map_module.eval()  # 设置为评估模式
 
     # Global policy
     g_policy = RL_Policy(g_observation_space.shape, g_action_space,
@@ -287,51 +257,47 @@ def main():
     intrinsic_rews = torch.zeros(num_scenes).to(device)
     extras = torch.zeros(num_scenes, 2)
 
+    # 兼容属性或方法两种写法，安全获取记忆状态维度
+    rec_state_size = (g_policy.rec_state_size()
+                      if callable(g_policy.rec_state_size)
+                      else g_policy.rec_state_size)
+
+    # 全局策略的记忆状态，初始为零
+    # g_rec_states = torch.zeros(num_scenes, g_policy.rec_state_size).to(device)
+    g_rec_states = torch.zeros((num_scenes, rec_state_size), device=device)
+
     # Storage
     g_rollouts = GlobalRolloutStorage(args.num_global_steps,
                                       num_scenes, g_observation_space.shape,
-                                      g_action_space, g_policy.rec_state_size,
+                                      # g_action_space, g_policy.rec_state_size,
+                                      g_action_space, rec_state_size,
                                       es).to(device)
 
     if args.load != "0":
         print("Loading model {}".format(args.load))
-        state_dict = torch.load(args.load,
-                                map_location=lambda storage, loc: storage)
-        g_policy.load_state_dict(state_dict)
+        # state_dict = torch.load(args.load,
+        #                         map_location=lambda storage, loc: storage)
+        # g_policy.load_state_dict(state_dict)
+        state_dict = torch.load(
+            args.load,
+            map_location=lambda storage, loc: storage,
+            weights_only=True  # 仅加载权重参数，避免反序列化任意对象
+        )
+        # 使用 strict=False 忽略旧模型中缺失的记忆模块参数
+        miss = g_policy.load_state_dict(state_dict, strict=False)
+        if len(miss.missing_keys) > 0:
+            print(f"忽略缺失参数: {miss.missing_keys}")
 
     if args.eval:
         g_policy.eval()
 
-    # 使用神经隐式地图更新初始局部地图
+    # Predict semantic map from frame 1
     poses = torch.from_numpy(np.asarray(
         [infos[env_idx]['sensor_pose'] for env_idx in range(num_scenes)])
     ).float().to(device)
 
-    for e in range(num_scenes):
-        # 取出第 e 个环境的传感器姿态
-        p = poses[e].cpu().numpy()
-        # 提取对应的 RGB 与深度图
-        rgb = obs[e, :3].permute(1, 2, 0).cpu().numpy()
-        depth = obs[e, 3].cpu().numpy()
-        # 使用 with torch.enable_grad() 保证地图更新阶段可以计算梯度
-        with torch.enable_grad():
-            # 更新神经地图参数
-            neural_maps[e].update(tuple(p), rgb, depth)
-        # 解码得到局部占用与语义网格
-        occ, sem = neural_maps[e].get_local_map(
-            (p[0], p[1]), p[2],
-            map_size_m=local_w * args.map_resolution / 100.0,
-            output_resolution=args.map_resolution / 100.0
-        )
-        # 写入局部地图的占用通道与探索通道
-        local_map[e, 0] = torch.from_numpy((occ > 0.5).astype(np.float32)).to(device)
-        local_map[e, 1] = torch.from_numpy(np.ones_like(occ, dtype=np.float32)).to(device)
-        # 写入语义通道
-        for k in range(args.num_sem_categories):
-            local_map[e, 4 + k] = torch.from_numpy((sem == (k + 1)).astype(np.float32)).to(device)
-
-        # 记录当前局部姿态，先将 numpy 数组转换为张量，避免类型不匹配
-        local_pose[e, :3] = torch.from_numpy(p[:3]).to(device)
+    _, local_map, _, local_pose = \
+        sem_map_module(obs, poses, local_map, local_pose)
 
     # Compute Global policy input
     locs = local_pose.cpu().numpy()
@@ -352,9 +318,9 @@ def main():
     global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
     #
     # 修改
-    goal_cat_list = [infos[env_idx]['goal_cat_id'] for env_idx in range(num_scenes)]
-    goal_cat_id = torch.from_numpy(np.asarray(goal_cat_list))
-    target_scenes = [object_to_scenes.get(gc, [None])[0] for gc in goal_cat_list]
+    goal_cat_id = torch.from_numpy(np.asarray(
+        [infos[env_idx]['goal_cat_id'] for env_idx
+         in range(num_scenes)]))
     # goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
 
     extras = torch.zeros(num_scenes, 2)
@@ -363,6 +329,8 @@ def main():
 
     g_rollouts.obs[0].copy_(global_input)
     g_rollouts.extras[0].copy_(extras)
+    # 初始化存储中的隐藏状态
+    g_rollouts.rec_states[0].copy_(g_rec_states)
 
     # Run Global Policy (global_goals = Long-Term Goal)
     g_value, g_action, g_action_log_prob, g_rec_states = \
@@ -379,14 +347,6 @@ def main():
                     for action in cpu_actions]
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
-
-    for e in range(num_scenes):
-        if target_scenes[e] and infos[e].get('room_type') != target_scenes[e]:
-            r, c = locs[e, 1], locs[e, 0]
-            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                            int(c * 100.0 / args.map_resolution)]
-            explored = local_map[e, 1].cpu().numpy()
-            global_goals[e] = select_frontier(explored, [loc_r, loc_c])
 
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
@@ -431,6 +391,8 @@ def main():
         l_masks = torch.FloatTensor([0 if x else 1
                                      for x in done]).to(device)
         g_masks *= l_masks
+        # 对应环境终止时，将隐藏状态置零
+        g_rec_states *= l_masks.unsqueeze(1)
 
         for e, x in enumerate(done):
             if x:
@@ -452,6 +414,8 @@ def main():
                 wait_env[e] = 1.
                 update_intrinsic_rew(e)
                 init_map_and_pose_for_env(e)
+                # 重置该环境对应的记忆状态
+                g_rec_states[e].fill_(0.)
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -461,25 +425,8 @@ def main():
              in range(num_scenes)])
         ).float().to(device)
 
-        for e in range(num_scenes):
-            p = poses[e].cpu().numpy()
-            rgb = obs[e, :3].permute(1, 2, 0).cpu().numpy()
-            depth = obs[e, 3].cpu().numpy()
-            # 同样在训练循环中启用梯度以更新地图
-            with torch.enable_grad():
-                neural_maps[e].update(tuple(p), rgb, depth)
-            occ, sem = neural_maps[e].get_local_map(
-                (p[0], p[1]), p[2],
-                map_size_m=local_w * args.map_resolution / 100.0,
-                output_resolution=args.map_resolution / 100.0
-            )
-            local_map[e, 0] = torch.from_numpy((occ > 0.5).astype(np.float32)).to(device)
-            local_map[e, 1] = torch.from_numpy(np.ones_like(occ, dtype=np.float32)).to(device)
-            for k in range(args.num_sem_categories):
-                local_map[e, 4 + k] = torch.from_numpy((sem == (k + 1)).astype(np.float32)).to(device)
-            local_pose[e, 0] = p[0]
-            local_pose[e, 1] = p[1]
-            local_pose[e, 2] = p[2]
+        _, local_map, _, local_pose = \
+            sem_map_module(obs, poses, local_map, local_pose)
 
         locs = local_pose.cpu().numpy()
         planner_pose_inputs[:, :3] = locs + origins
@@ -535,10 +482,9 @@ def main():
                     full_map[:, 0:4, :, :])
             global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
 
-            goal_cat_list = [infos[env_idx]['goal_cat_id'] for env_idx in range(num_scenes)]
-            goal_cat_id = torch.from_numpy(np.asarray(goal_cat_list))
-            target_scenes = [object_to_scenes.get(gc, [None])[0] for gc in goal_cat_list]
-
+            goal_cat_id = torch.from_numpy(np.asarray(
+                [infos[env_idx]['goal_cat_id'] for env_idx
+                 in range(num_scenes)]))
             # goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
 
             extras[:, 0] = global_orientation[:, 0]
@@ -583,6 +529,9 @@ def main():
                     extras=g_rollouts.extras[g_step + 1],
                     deterministic=False
                 )
+            # 保存最新的隐藏状态供下一步使用
+            g_rollouts.rec_states[g_step + 1].copy_(g_rec_states)
+
             cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
             global_goals = [[int(action[0] * local_w),
                              int(action[1] * local_h)]
@@ -590,14 +539,6 @@ def main():
             global_goals = [[min(x, int(local_w - 1)),
                              min(y, int(local_h - 1))]
                             for x, y in global_goals]
-
-            for e in range(num_scenes):
-                if target_scenes[e] and infos[e].get('room_type') != target_scenes[e]:
-                    r, c = locs[e, 1], locs[e, 0]
-                    loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                                    int(c * 100.0 / args.map_resolution)]
-                    explored = local_map[e, 1].cpu().numpy()
-                    global_goals[e] = select_frontier(explored, [loc_r, loc_c])
 
             g_reward = 0
             g_masks = torch.ones(num_scenes).float().to(device)
@@ -722,15 +663,20 @@ def main():
                         np.mean(episode_dist),
                         len(episode_spl))
 
-            log += "\n\tLosses:"
-            if len(g_value_losses) > 0 and not args.eval:
-                log += " ".join([
-                    " Policy Loss value/action/dist:",
-                    "{:.3f}/{:.3f}/{:.3f},".format(
-                        np.mean(g_value_losses),
-                        np.mean(g_action_losses),
-                        np.mean(g_dist_entropies))
-                ])
+                # log += "\n\tLosses:"
+                # if len(g_value_losses) > 0 and not args.eval:
+                #     log += " ".join([
+                #         " Policy Loss value/action/dist:",
+                #         "{:.3f}/{:.3f}/{:.3f},".format(
+                #             np.mean(g_value_losses),
+                #             np.mean(g_action_losses),
+                #             np.mean(g_dist_entropies))
+                #     ])
+                # 仅在训练阶段且已计算出损失时才输出损失信息
+                log += "\n\tLosses: Policy Loss value/action/dist:{:.3f}/{:.3f}/{:.3f},".format(
+                    np.mean(g_value_losses),
+                    np.mean(g_action_losses),
+                    np.mean(g_dist_entropies))
 
             print(log)
             logging.info(log)

@@ -13,7 +13,10 @@ class Goal_Oriented_Semantic_Policy(NNBase):
     def __init__(self, input_shape, recurrent=False, hidden_size=512,
                  num_sem_categories=16):
         super(Goal_Oriented_Semantic_Policy, self).__init__(
-            recurrent, hidden_size, hidden_size)
+            #recurrent, hidden_size, hidden_size)
+            False, hidden_size, hidden_size)
+        # 手动标记该网络为循环结构，便于外部判断
+        self._recurrent = True
 
         out_size = int(input_shape[1] / 16.) * int(input_shape[2] / 16.)
 
@@ -40,7 +43,18 @@ class Goal_Oriented_Semantic_Policy(NNBase):
         self.critic_linear = nn.Linear(256, 1)
         self.orientation_emb = nn.Embedding(72, 8)
         self.goal_emb = nn.Embedding(num_sem_categories, 8)
+
+        # LSTM 记忆模块，用于存储历史预测和目标方向
+        self.memory = nn.LSTMCell(hidden_size, hidden_size)
+        # 记忆衰减系数，防止过时信息长期保留
+        self.memory_decay = 0.9
+
         self.train()
+
+    def rec_state_size(self):
+        """LSTM 需要同时保存隐藏态和细胞态，因此维度加倍"""
+        return self._hidden_size * 2
+
 
     def forward(self, inputs, rnn_hxs, masks, extras):
         x = self.main(inputs)
@@ -50,12 +64,24 @@ class Goal_Oriented_Semantic_Policy(NNBase):
         x = torch.cat((x, orientation_emb, goal_emb), 1)
 
         x = nn.ReLU()(self.linear1(x))
-        if self.is_recurrent:
-            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+        # if self.is_recurrent:
+        #     x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
 
-        x = nn.ReLU()(self.linear2(x))
+        # x = nn.ReLU()(self.linear2(x))
+        # 将隐藏状态拆分为 LSTM 的 h 与 c，并根据 mask 重置
+        hx, cx = torch.split(rnn_hxs, self._hidden_size, dim=1)
+        hx = hx * masks.unsqueeze(1)
+        cx = cx * masks.unsqueeze(1)
 
-        return self.critic_linear(x).squeeze(-1), x, rnn_hxs
+        # LSTM 更新，融合当前输入与历史信息
+        hx, cx = self.memory(x, (hx, cx))
+        # 对记忆施加衰减，避免过时信息影响决策
+        hx = hx * self.memory_decay
+        cx = cx * self.memory_decay
+
+        x = nn.ReLU()(self.linear2(hx))
+        # return self.critic_linear(x).squeeze(-1), x, rnn_hxs
+        return self.critic_linear(x).squeeze(-1), x, torch.cat((hx, cx), 1)
 
 
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15

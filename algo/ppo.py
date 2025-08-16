@@ -1,6 +1,10 @@
+# The following code is largely borrowed from:
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/algo/ppo.py
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 
 class PPO():
 
@@ -57,6 +61,13 @@ class PPO():
                 returns = sample['returns']
                 adv_targ = sample['adv_targ']
 
+                # ---------------- 回报归一化 ----------------
+                # 计算回报的均值与标准差，用于标准化回报与价值预测
+                returns_mean = returns.mean()
+                returns_std = returns.std() + 1e-5
+                returns_norm = (returns - returns_mean) / returns_std
+                value_preds_norm = (value_preds - returns_mean) / returns_std
+
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy, _ = \
                     self.actor_critic.evaluate_actions(
@@ -65,34 +76,50 @@ class PPO():
                         extras=sample['extras']
                     )
 
+                # 同样对网络输出进行标准化，使其与回报处于同一尺度
+                values_norm = (values - returns_mean) / returns_std
+
                 ratio = torch.exp(action_log_probs -
                                   sample['old_action_log_probs'])
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_param,
                                     1.0 + self.clip_param) * adv_targ
-                action_loss = -torch.min(surr1, surr2).mean()
+                # action_loss = -torch.min(surr1, surr2).mean()
+                # 计算两个近似值的最小值作为 PPO 的目标
+                surrogate = torch.min(surr1, surr2)
+                # 策略梯度损失取其负均值，用于反向传播
+                policy_loss = -surrogate.mean()
 
                 if self.use_clipped_value_loss:
-                    value_pred_clipped = value_preds + \
-                        (values - value_preds).clamp(
+                    # value_pred_clipped = value_preds + \
+                    #     (values - value_preds).clamp(
+                    value_pred_clipped = value_preds_norm + \
+                        (values_norm - value_preds_norm).clamp(
                             -self.clip_param, self.clip_param)
-                    value_losses = (values - returns).pow(2)
+                    # value_losses = (values - returns).pow(2)
+                    value_losses = (values_norm - returns_norm).pow(2)
                     value_losses_clipped = (value_pred_clipped
-                                            - returns).pow(2)
+                                            # - returns).pow(2)
+                                            - returns_norm).pow(2)
                     value_loss = .5 * torch.max(value_losses,
                                                 value_losses_clipped).mean()
                 else:
-                    value_loss = 0.5 * (returns - values).pow(2).mean()
+                    # value_loss = 0.5 * (returns - values).pow(2).mean()
+                    value_loss = 0.5 * (returns_norm - values_norm).pow(2).mean()
 
                 self.optimizer.zero_grad()
-                (value_loss * self.value_loss_coef + action_loss -
+                #(value_loss * self.value_loss_coef + action_loss -
+                # 总损失 = 价值函数损失 + 策略梯度损失 - 熵正则项
+                (value_loss * self.value_loss_coef + policy_loss -
                  dist_entropy * self.entropy_coef).backward()
                 nn.utils.clip_grad_norm_(self.actor_critic.parameters(),
                                          self.max_grad_norm)
                 self.optimizer.step()
 
                 value_loss_epoch += value_loss.item()
-                action_loss_epoch += action_loss.item()
+                #action_loss_epoch += action_loss.item()
+                # 记录策略损失的绝对值平均，以便观察更新幅度
+                action_loss_epoch += surrogate.abs().mean().item()
                 dist_entropy_epoch += dist_entropy.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch

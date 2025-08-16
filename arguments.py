@@ -1,6 +1,7 @@
 import argparse
 import torch
 
+
 def get_args():
     parser = argparse.ArgumentParser(
         description='Goal-Oriented-Semantic-Exploration')
@@ -9,36 +10,26 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1,
                         help='random seed (default: 1)')
     parser.add_argument('--auto_gpu_config', type=int, default=1)
-
     parser.add_argument('--total_num_scenes', type=str, default="auto")
-
     parser.add_argument('-n', '--num_processes', type=int, default=5,
                         help="""how many training processes to use (default:5)
-                                    Overridden when auto_gpu_config=1
-                                    and training on gpus""")
+                                Overridden when auto_gpu_config=1
+                                and training on gpus""")
     parser.add_argument('--num_processes_per_gpu', type=int, default=6)
-
     parser.add_argument('--num_processes_on_first_gpu', type=int, default=1)
-
     parser.add_argument('--eval', type=int, default=0,
                         help='0: Train, 1: Evaluate (default: 0)')
-
-    parser.add_argument('--num_training_frames', type=int, default=10000,  # 原default=10000000
+    parser.add_argument('--num_training_frames', type=int, default=100000,            #原default=10000000
                         help='total number of training frames')
-
     parser.add_argument('--num_eval_episodes', type=int, default=200,
                         help="number of test episodes per scene")
-
-    parser.add_argument('--num_train_episodes', type=int, default=1000,  # 原default=10000
+    parser.add_argument('--num_train_episodes', type=int, default=10000,           #原default=10000
                         help="""number of train episodes per scene
-                                    before loading the next scene""")
-
+                                before loading the next scene""")
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')
-
     parser.add_argument("--sim_gpu_id", type=int, default=0,
                         help="gpu id on which scenes are loaded")
-
     parser.add_argument("--sem_gpu_id", type=int, default=-1,
                         help="""gpu id for semantic model,
                                 -1: same as sim gpu, -2: cpu""")
@@ -47,23 +38,17 @@ def get_args():
     parser.add_argument('--log_interval', type=int, default=10,
                         help="""log interval, one log per n updates
                                 (default: 10) """)
-
     parser.add_argument('--save_interval', type=int, default=1,
                         help="""save interval""")
-
     parser.add_argument('-d', '--dump_location', type=str, default="./tmp/",
                         help='path to dump models and log (default: ./tmp/)')
-
     parser.add_argument('--exp_name', type=str, default="exp1",
                         help='experiment name (default: exp1)')
-
     parser.add_argument('--save_periodic', type=int, default=500000,
                         help='Model save frequency in number of updates')
-
     parser.add_argument('--load', type=str, default="0",
                         help="""model path to load,
                                 0 to not reload (default: 0)""")
-
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help="""1: Render the observation and
                                    the predicted semantic map,
@@ -84,8 +69,6 @@ def get_args():
                         help='Frame height (default:120)')
     parser.add_argument('-el', '--max_episode_length', type=int, default=500,  #原500
                         help="""Maximum episode length""")
-    parser.add_argument('--scene_max_steps', type=int, default=200,
-                        help='maximum steps to stay in one scene before switching')
     parser.add_argument("--task_config", type=str,
                         default="tasks/objectnav_gibson.yaml",
                         help="path to config yaml containing task information")
@@ -114,7 +97,7 @@ def get_args():
 
     # Model Hyperparameters
     parser.add_argument('--agent', type=str, default="sem_exp")
-    parser.add_argument('--lr', type=float, default=2.5e-5,
+    parser.add_argument('--lr', type=float, default=3e-5,  # 2.5e-5
                         help='learning rate (default: 2.5e-5)')
     parser.add_argument('--global_hidden_size', type=int, default=256,
                         help='global_hidden_size')
@@ -128,7 +111,7 @@ def get_args():
                         help='use generalized advantage estimation')
     parser.add_argument('--tau', type=float, default=0.95,
                         help='gae parameter (default: 0.95)')
-    parser.add_argument('--entropy_coef', type=float, default=0.001,
+    parser.add_argument('--entropy_coef', type=float, default=0.005,  #0.001
                         help='entropy term coefficient (default: 0.01)')
     parser.add_argument('--value_loss_coef', type=float, default=0.5,
                         help='value loss coefficient (default: 0.5)')
@@ -165,14 +148,11 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
-    parser.add_argument('--use_sea', action='store_true', default=False)
-    parser.add_argument('--sea_update_interval', type=int, default=10)
-    parser.add_argument('--stuck_forward_threshold', type=int, default=10,
-                        help='连续前进但无位移的次数阈值，用于检测卡死')
-    parser.add_argument('--visited_penalty', type=float, default=5.0,
-                        help='智能体重复经过路径的惩罚系数')
 
-
+    #添加参数来指定目标类别
+    # parser.add_argument('--target_goal', type=int, default=0,
+    #                     help='Target goal category (0 for chair)')
+    # parse arguments
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -190,7 +170,7 @@ def get_args():
                 args.total_num_scenes = 5
             else:
                 assert False, "Unknown task config, please specify" + \
-                              " total_num_scenes"
+                    " total_num_scenes"
 
             # GPU Memory required for the SemExp model:
             #       0.8 + 0.4 * args.total_num_scenes (GB)
@@ -215,7 +195,7 @@ def get_args():
 
             if args.eval:
                 max_threads = num_processes_per_gpu * (num_gpus - 1) \
-                              + num_processes_on_first_gpu
+                    + num_processes_on_first_gpu
                 assert max_threads >= args.total_num_scenes, \
                     """Insufficient GPU memory for evaluation"""
 
@@ -226,7 +206,7 @@ def get_args():
                 assert args.num_processes > 0, "Insufficient GPU memory"
             else:
                 num_threads = num_processes_per_gpu * (num_gpus - 1) \
-                              + num_processes_on_first_gpu
+                    + num_processes_on_first_gpu
                 num_threads = min(num_threads, args.total_num_scenes)
                 args.num_processes_per_gpu = num_processes_per_gpu
                 args.num_processes_on_first_gpu = max(

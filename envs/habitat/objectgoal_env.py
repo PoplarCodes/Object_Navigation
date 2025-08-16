@@ -112,9 +112,6 @@ class ObjectGoal_Env(habitat.RLEnv):
         sem_map = scene_info[floor_idx]['sem_map']
         map_obj_origin = scene_info[floor_idx]['origin']
 
-        # Store ground-truth semantic map for later visualization
-        self.gt_sem_map = sem_map
-
         # Setup ground truth planner
         object_boundary = args.success_dist
         map_resolution = args.map_resolution
@@ -173,9 +170,6 @@ class ObjectGoal_Env(habitat.RLEnv):
         floor_height = scene_info[floor_idx]['floor_height']
         sem_map = scene_info[floor_idx]['sem_map']
         map_obj_origin = scene_info[floor_idx]['origin']
-
-        # Store ground-truth semantic map for later visualization
-        self.gt_sem_map = sem_map
 
         cat_counts = sem_map.sum(2).sum(1)
         possible_cats = list(np.arange(6))
@@ -408,6 +402,13 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         reward = (self.prev_distance - self.curr_distance) * \
             self.args.reward_coeff
+
+        # 每个时间步给予固定惩罚，鼓励智能体缩短路径
+        reward -= 0.01
+        # 当距离小于成功阈值时，根据剩余步数给予额外奖励
+        if self.curr_distance <= self.object_boundary:
+            remaining_steps = self.args.max_episode_length - (self.timestep + 1)
+            reward += 0.01 * remaining_steps
 
         self.prev_distance = self.curr_distance
         return reward
