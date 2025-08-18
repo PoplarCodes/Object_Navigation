@@ -120,10 +120,20 @@ class SEAAtlasManager:
         Returns:
             subgoal_place: index of the chosen place cluster as subgoal.
         """
+        # 若当前图集中没有任何场所信息或置信度为空，返回0避免argmax空序列错误
+        if self.num_places == 0 or belief is None or belief.size == 0:
+            return 0
+
+        # 判断目标类别是否存在以及图集中是否有对应的场所-物体连接
+        # 若没有目标信息或图集尚未构建，退化为选择当前置信度最大的场所
+        if (goal_category not in self.object_ids or self.place_object is None
+                or self.place_object.size == 0):
+            return int(np.argmax(belief))
+
         # Determine target place cluster: P(place|goal) proportional to place_object[:, goal]
-        if goal_category not in self.object_ids or self.place_object is None:
-            # No info about goal or atlas empty: fallback to most probable current place
-            return np.argmax(belief)
+        # if goal_category not in self.object_ids or self.place_object is None:
+        #     # No info about goal or atlas empty: fallback to most probable current place
+        #     return np.argmax(belief)
         j = self.object_ids.index(goal_category)
         # Compute probability P(place | goal) proportional to place_object[:, j]
         p_place_given_goal = self.place_object[:, j].astype(float)
@@ -132,9 +142,11 @@ class SEAAtlasManager:
         else:
             p_place_given_goal = np.ones(self.num_places) / self.num_places
         # Choose target place cluster (highest probability)
-        target_place = np.argmax(p_place_given_goal)
+        # target_place = np.argmax(p_place_given_goal)
+        target_place = int(np.argmax(p_place_given_goal))
         # Determine current place: max of belief
-        current_place = np.argmax(belief)
+        # current_place = np.argmax(belief)
+        current_place = int(np.argmax(belief))
         # If current_place is the target, return it (no further subgoal needed)
         if current_place == target_place:
             return target_place
