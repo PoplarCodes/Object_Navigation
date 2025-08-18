@@ -565,7 +565,9 @@ def main():
                     global_goals.append(subgoal_coord)
                 else:
                     # Add samples to global policy storage供RL更新
-                    if step == 0:
+                    # if step == 0:
+                    # 在初始阶段尚无上一时刻的隐藏状态，因而只缓存当前观测
+                    if step < args.num_local_steps:
                         g_rollouts.obs[0].copy_(global_input)
                         g_rollouts.extras[0].copy_(extras)
                     else:
