@@ -563,36 +563,35 @@ def main():
                     except Exception:
                         subgoal_coord = [0, 0]
                     global_goals.append(subgoal_coord)
+            else:
+                # 若不使用SEA，则继续采样全局策略进行RL更新
+                # 在初始阶段尚无上一时刻的隐藏状态，因而只缓存当前观测
+                if step < args.num_local_steps:
+                    g_rollouts.obs[0].copy_(global_input)
+                    g_rollouts.extras[0].copy_(extras)
                 else:
-                    # Add samples to global policy storage供RL更新
-                    # if step == 0:
-                    # 在初始阶段尚无上一时刻的隐藏状态，因而只缓存当前观测
-                    if step < args.num_local_steps:
-                        g_rollouts.obs[0].copy_(global_input)
-                        g_rollouts.extras[0].copy_(extras)
-                    else:
-                        g_rollouts.insert(
-                            global_input, g_rec_states,
-                            g_action, g_action_log_prob, g_value,
-                            g_reward, g_masks, extras
-                        )
+                    g_rollouts.insert(
+                        global_input, g_rec_states,
+                        g_action, g_action_log_prob, g_value,
+                        g_reward, g_masks, extras
+                    )
 
                     # 使用RL全局策略采样下一步子目标
-                    g_value, g_action, g_action_log_prob, g_rec_states = \
-                        g_policy.act(
-                            g_rollouts.obs[g_step + 1],
-                            g_rollouts.rec_states[g_step + 1],
-                            g_rollouts.masks[g_step + 1],
-                            extras=g_rollouts.extras[g_step + 1],
-                            deterministic=False
-                        )
-                    cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-                    global_goals = [[int(action[0] * local_w),
-                                     int(action[1] * local_h)]
-                                    for action in cpu_actions]
-                    global_goals = [[min(x, int(local_w - 1)),
-                                     min(y, int(local_h - 1))]
-                                    for x, y in global_goals]
+                g_value, g_action, g_action_log_prob, g_rec_states = \
+                    g_policy.act(
+                        g_rollouts.obs[g_step + 1],
+                        g_rollouts.rec_states[g_step + 1],
+                        g_rollouts.masks[g_step + 1],
+                        extras=g_rollouts.extras[g_step + 1],
+                        deterministic=False
+                    )
+                cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
+                global_goals = [[int(action[0] * local_w),
+                                 int(action[1] * local_h)]
+                                for action in cpu_actions]
+                global_goals = [[min(x, int(local_w - 1)),
+                                 min(y, int(local_h - 1))]
+                                for x, y in global_goals]
 
             # Sample long-term goal from global policy
             g_value, g_action, g_action_log_prob, g_rec_states = \
