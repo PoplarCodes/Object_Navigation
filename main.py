@@ -1,851 +1,113 @@
-from collections import deque, defaultdict
-import os
-import logging
-import time
-import json
-import gym
-import torch.nn as nn
-import torch
+# file: semantic_graph.py
+# Module to build and maintain a semantic graph of the environment (nodes: places, images, objects; edges: relationships).
 import numpy as np
-from semantic_graph import SemanticGraph  # 引入语义图结构
-from sea_atlas_manager import SEAAtlasManager  # 引入SEA图集管理器
-from model import RL_Policy, Semantic_Mapping
-from utils.storage import GlobalRolloutStorage
-from envs import make_vec_envs
-from arguments import get_args
-import algo
-import matplotlib.pyplot as plt  # 导入 Matplotlib 库
 
-os.environ["OMP_NUM_THREADS"] = "1"
-
-
-def main():
-    args = get_args()
-
-    # 若外部未定义use_sea_atlas参数，这里设置默认值False
-    if not hasattr(args, 'use_sea_atlas'):
-        args.use_sea_atlas = False
-
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-
-    if args.cuda:
-        torch.cuda.manual_seed(args.seed)
-
-    # Setup Logging
-    log_dir = "{}/models/{}/".format(args.dump_location, args.exp_name)
-    dump_dir = "{}/dump/{}/".format(args.dump_location, args.exp_name)
-
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    if not os.path.exists(dump_dir):
-        os.makedirs(dump_dir)
-
-    logging.basicConfig(
-        filename=log_dir + 'train.log',
-        level=logging.INFO)
-    print("Dumping at {}".format(log_dir))
-    print(args)
-    logging.info(args)
-
-    # Logging and loss variables
-    num_scenes = args.num_processes  # 并行场景的数量
-    num_episodes = int(args.num_eval_episodes)
-    device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
-
-    # 根据参数决定是否启用语义环境图集
-    if args.use_sea_atlas:
-        sea_manager = SEAAtlasManager()  # 初始化SEA管理器
-        training_graphs = []  # TODO: 加载训练阶段的语义图数据
-        sea_manager.build_atlas(training_graphs)  # 构建或加载SEA图集
-        place_to_coord = {}  # TODO: 建立聚类索引与坐标的映射
-    else:
-        sea_manager = None
-        place_to_coord = {}
-
-    g_masks = torch.ones(num_scenes).float().to(device)  # 全 1 的张量，用于记录每个场景的掩码信息
-
-    best_g_reward = -np.inf
-
-    # 为1表示处于评估模式
-    if args.eval:
-        episode_success = []
-        episode_spl = []
-        episode_dist = []
-        for _ in range(args.num_processes):
-            episode_success.append(deque(maxlen=num_episodes))
-            episode_spl.append(deque(maxlen=num_episodes))
-            episode_dist.append(deque(maxlen=num_episodes))
-
-    # false 0为训练模式
-    else:
-        episode_success = deque(maxlen=1000)
-        episode_spl = deque(maxlen=1000)
-        episode_dist = deque(maxlen=1000)
-
-    # 进程完成状态
-    finished = np.zeros((args.num_processes))
-    wait_env = np.zeros((args.num_processes))
-
-    g_episode_rewards = deque(maxlen=1000)
-
-    g_value_losses = deque(maxlen=1000)
-    g_action_losses = deque(maxlen=1000)
-    g_dist_entropies = deque(maxlen=1000)
-
-    per_step_g_rewards = deque(maxlen=1000)
-
-    g_process_rewards = np.zeros((num_scenes))
-
-    """
-    开始环境：创建并行的模拟环境，加载场景和智能体
-    返回环境对象 envs，其初始状态包括观察数据 obs 和环境信息 infos
-    """
-    # Starting environments
-    torch.set_num_threads(1)
-    envs = make_vec_envs(args)
-    obs, infos = envs.reset()
-
-    torch.set_grad_enabled(False)
-
-    # Initialize map variables:
-    # Full map consists of multiple channels containing the following:
-    # 1. Obstacle Map
-    # 2. Exploread Area
-    # 3. Current Agent Location
-    # 4. Past Agent Locations
-    # 5,6,7,.. : Semantic Categories
-    nc = args.num_sem_categories + 4  # num channels
-
-    # Calculating full and local map sizes
-    map_size = args.map_size_cm // args.map_resolution
-    full_w, full_h = map_size, map_size
-    local_w = int(full_w / args.global_downscaling)
-    local_h = int(full_h / args.global_downscaling)
-
-    # Initializing full and local map
-    full_map = torch.zeros(num_scenes, nc, full_w, full_h).float().to(device)
-    local_map = torch.zeros(num_scenes, nc, local_w,
-                            local_h).float().to(device)
-
-    # Initial full and local pose
-    full_pose = torch.zeros(num_scenes, 3).float().to(device)
-    local_pose = torch.zeros(num_scenes, 3).float().to(device)
-
-    # Origin of local map
-    origins = np.zeros((num_scenes, 3))
-
-    # Local Map Boundaries
-    lmb = np.zeros((num_scenes, 4)).astype(int)
-
-    # Planner pose inputs has 7 dimensions
-    # 1-3 store continuous global agent location
-    # 4-7 store local map boundaries
-    planner_pose_inputs = np.zeros((num_scenes, 7))
-
-    # 计算局部地图边界
-    def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
-        loc_r, loc_c = agent_loc
-        local_w, local_h = local_sizes
-        full_w, full_h = full_sizes
-
-        if args.global_downscaling > 1:
-            gx1, gy1 = loc_r - local_w // 2, loc_c - local_h // 2
-            gx2, gy2 = gx1 + local_w, gy1 + local_h
-            if gx1 < 0:
-                gx1, gx2 = 0, local_w
-            if gx2 > full_w:
-                gx1, gx2 = full_w - local_w, full_w
-
-            if gy1 < 0:
-                gy1, gy2 = 0, local_h
-            if gy2 > full_h:
-                gy1, gy2 = full_h - local_h, full_h
-        else:
-            gx1, gx2, gy1, gy2 = 0, full_w, 0, full_h
-
-        return [gx1, gx2, gy1, gy2]
-
-    # 初始化完整地图和完整姿态
-    def init_map_and_pose():
-        full_map.fill_(0.)
-        full_pose.fill_(0.)
-        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  # 智能体初始位置为地图的中心
-
-        locs = full_pose.cpu().numpy()
-        planner_pose_inputs[:, :3] = locs  # 将智能体的完整姿态信息的前三维（x,y,朝向）给规划器的输入信息
-        for e in range(num_scenes):
-            r, c = locs[e, 1], locs[e, 0]  # 提取当前场景中智能体的xy
-            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                            int(c * 100.0 / args.map_resolution)]
-
-            full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
-
-            lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                              (local_w, local_h),
-                                              (full_w, full_h))
-
-            planner_pose_inputs[e, 3:] = lmb[e]
-            origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-                          lmb[e][0] * args.map_resolution / 100.0, 0.]
-
-        for e in range(num_scenes):
-            local_map[e] = full_map[e, :,
-                           lmb[e, 0]:lmb[e, 1],
-                           lmb[e, 2]:lmb[e, 3]]
-            local_pose[e] = full_pose[e] - \
-                            torch.from_numpy(origins[e]).to(device).float()
-
-    def init_map_and_pose_for_env(e):
-        full_map[e].fill_(0.)
-        full_pose[e].fill_(0.)
-        full_pose[e, :2] = args.map_size_cm / 100.0 / 2.0
-
-        locs = full_pose[e].cpu().numpy()
-        planner_pose_inputs[e, :3] = locs
-        r, c = locs[1], locs[0]
-        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                        int(c * 100.0 / args.map_resolution)]
-
-        full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
-
-        lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                          (local_w, local_h),
-                                          (full_w, full_h))
-
-        planner_pose_inputs[e, 3:] = lmb[e]
-        origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-                      lmb[e][0] * args.map_resolution / 100.0, 0.]
-
-        local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
-        local_pose[e] = full_pose[e] - \
-                        torch.from_numpy(origins[e]).to(device).float()
-
-    # 更新内在奖励
-    def update_intrinsic_rew(e):
-        prev_explored_area = full_map[e, 1].sum(1).sum(0)  # 计算之前探索的区域面积，网格数
-        full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-            local_map[e]  # 环境的局部地图更新到完整地图对应的局部区域，以反映智能体在局部区域的最新探索情况
-        curr_explored_area = full_map[e, 1].sum(1).sum(0)  # 当前探索的区域总网格数
-
-        # 内在奖励定义为当前探索区域面积减去之前探索的区域面积
-        intrinsic_rews[e] = curr_explored_area - prev_explored_area
-        intrinsic_rews[e] *= (args.map_resolution / 100.) ** 2  # to m^2  内在奖励从网格数转换为实际的面积
-
-    # 调用函数初始化
-    init_map_and_pose()
-
-    # 定义全局策略的观测空间
-    # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
-    ngc = 8 + args.num_sem_categories  # 通道数 num_sem_categories = 16
-    es = 2
-    g_observation_space = gym.spaces.Box(0, 1,
-                                         (ngc,
-                                          local_w,
-                                          local_h), dtype='uint8')
-
-    # Global policy action space
-    g_action_space = gym.spaces.Box(low=0.0, high=0.99,
-                                    shape=(2,), dtype=np.float32)
-
-    # 设置全局策略中循环层的隐藏层大小
-    g_hidden_size = args.global_hidden_size  # global_hidden_size = 256
-
-    # 初始化语义地图模块
-    sem_map_module = Semantic_Mapping(args).to(device)
-    sem_map_module.eval()  # 设置为评估模式
-
-    # Global policy
-    g_policy = RL_Policy(g_observation_space.shape, g_action_space,
-                         model_type=1,
-                         base_kwargs={'recurrent': args.use_recurrent_global,
-                                      'hidden_size': g_hidden_size,
-                                      'num_sem_categories': ngc - 8
-                                      }).to(device)
-    g_agent = algo.PPO(g_policy, args.clip_param, args.ppo_epoch,
-                       args.num_mini_batch, args.value_loss_coef,
-                       args.entropy_coef, lr=args.lr, eps=args.eps,
-                       max_grad_norm=args.max_grad_norm)
-
-    global_input = torch.zeros(num_scenes, ngc, local_w, local_h)
-    global_orientation = torch.zeros(num_scenes, 1).long()
-    intrinsic_rews = torch.zeros(num_scenes).to(device)
-    extras = torch.zeros(num_scenes, 2)
-
-    # Storage
-    g_rollouts = GlobalRolloutStorage(args.num_global_steps,
-                                      num_scenes, g_observation_space.shape,
-                                      g_action_space, g_policy.rec_state_size,
-                                      es).to(device)
-
-    if args.load != "0":
-        print("Loading model {}".format(args.load))
-        state_dict = torch.load(args.load,
-                                map_location=lambda storage, loc: storage)
-        g_policy.load_state_dict(state_dict)
-
-    if args.eval:
-        g_policy.eval()
-
-    # Predict semantic map from frame 1
-    poses = torch.from_numpy(np.asarray(
-        [infos[env_idx]['sensor_pose'] for env_idx in range(num_scenes)])
-    ).float().to(device)
-
-    _, local_map, _, local_pose = \
-        sem_map_module(obs, poses, local_map, local_pose)
-
-    # Compute Global policy input
-    locs = local_pose.cpu().numpy()
-    global_input = torch.zeros(num_scenes, ngc, local_w, local_h)
-    global_orientation = torch.zeros(num_scenes, 1).long()
-
-    for e in range(num_scenes):
-        r, c = locs[e, 1], locs[e, 0]
-        loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                        int(c * 100.0 / args.map_resolution)]
-
-        local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
-        global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-
-    global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
-    global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
-        full_map[:, 0:4, :, :])
-    global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
-    #
-    # 修改
-    goal_cat_id = torch.from_numpy(np.asarray(
-        [infos[env_idx]['goal_cat_id'] for env_idx
-         in range(num_scenes)]))
-    # goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
-
-    extras = torch.zeros(num_scenes, 2)
-    extras[:, 0] = global_orientation[:, 0]
-    extras[:, 1] = goal_cat_id
-
-    g_rollouts.obs[0].copy_(global_input)
-    g_rollouts.extras[0].copy_(extras)
-
-    # Run Global Policy (global_goals = Long-Term Goal)
-    # g_value, g_action, g_action_log_prob, g_rec_states = \
-    #     g_policy.act(
-    #         g_rollouts.obs[0],
-    #         g_rollouts.rec_states[0],
-    #         g_rollouts.masks[0],
-    #         extras=g_rollouts.extras[0],
-    #         deterministic=False
-    #     )
-    #
-    # cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-    # global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
-    #                 for action in cpu_actions]
-    # global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
-    #                 for x, y in global_goals]
-
-    # 从环境信息中提取当前可见物体类别
-    visible_objects = [infos[e].get('visible_objects', []) for e in range(num_scenes)]
-
-    if args.use_sea_atlas:
-        # 使用SEA图集进行定位并选择子目标
-        beliefs = []
-        for e in range(num_scenes):
-            belief_e = sea_manager.localize(visible_objects[e])  # 计算当前环境的场所置信度
-            beliefs.append(belief_e)
-        global_goals = []
-        for e in range(num_scenes):
-            goal_cat = infos[e]['goal_cat_id']  # 当前任务目标类别
-            subgoal_place = sea_manager.select_subgoal(goal_cat, beliefs[e])  # 选择子目标位置簇
-            try:
-                subgoal_coord = place_to_coord[subgoal_place]  # 将簇索引转换为坐标
-            except Exception:
-                subgoal_coord = [0, 0]  # 若映射缺失则回退到原点
-            global_goals.append(subgoal_coord)
-    else:
-        # 采用原有全局策略采样子目标
-        g_value, g_action, g_action_log_prob, g_rec_states = \
-            g_policy.act(
-                g_rollouts.obs[0],
-                g_rollouts.rec_states[0],
-                g_rollouts.masks[0],
-                extras=g_rollouts.extras[0],
-                deterministic=False
-            )
-
-        cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-        global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
-                        for action in cpu_actions]
-        global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
-                        for x, y in global_goals]
-
-    goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
-
-    for e in range(num_scenes):
-        goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-
-    planner_inputs = [{} for e in range(num_scenes)]
-    for e, p_input in enumerate(planner_inputs):
-        p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
-        p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
-        p_input['pose_pred'] = planner_pose_inputs[e]
-        p_input['goal'] = goal_maps[e]  # global_goals[e]
-        p_input['new_goal'] = 1
-        p_input['found_goal'] = 0
-        p_input['wait'] = wait_env[e] or finished[e]
-        if args.visualize or args.print_images:
-            local_map[e, -1, :, :] = 1e-5
-            p_input['sem_map_pred'] = local_map[e, 4:, :, :
-                                      ].argmax(0).cpu().numpy()
-
-    obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
-
-    start = time.time()
-    g_reward = 0
-
-    torch.set_grad_enabled(False)
-    spl_per_category = defaultdict(list)
-    success_per_category = defaultdict(list)
-
-    # 用于存储奖励数据
-    global_eps_rewards = []
-
-    for step in range(args.num_training_frames // args.num_processes + 1):
-        if finished.sum() == args.num_processes:
-            break
-
-        g_step = (step // args.num_local_steps) % args.num_global_steps
-        l_step = step % args.num_local_steps
-
-        # ------------------------------------------------------------------
-        # Reinitialize variables when episode ends
-        l_masks = torch.FloatTensor([0 if x else 1
-                                     for x in done]).to(device)
-        g_masks *= l_masks
-
-        for e, x in enumerate(done):
-            if x:
-                spl = infos[e]['spl']
-                success = infos[e]['success']
-                dist = infos[e]['distance_to_goal']
-                spl_per_category[infos[e]['goal_name']].append(spl)
-                success_per_category[infos[e]['goal_name']].append(success)
-                if args.eval:
-                    episode_success[e].append(success)
-                    episode_spl[e].append(spl)
-                    episode_dist[e].append(dist)
-                    if len(episode_success[e]) == num_episodes:
-                        finished[e] = 1
-                else:
-                    episode_success.append(success)
-                    episode_spl.append(spl)
-                    episode_dist.append(dist)
-                wait_env[e] = 1.
-                update_intrinsic_rew(e)
-                init_map_and_pose_for_env(e)
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Semantic Mapping Module
-        poses = torch.from_numpy(np.asarray(
-            [infos[env_idx]['sensor_pose'] for env_idx
-             in range(num_scenes)])
-        ).float().to(device)
-
-        _, local_map, _, local_pose = \
-            sem_map_module(obs, poses, local_map, local_pose)
-
-        locs = local_pose.cpu().numpy()
-        planner_pose_inputs[:, :3] = locs + origins
-        local_map[:, 2, :, :].fill_(0.)  # Resetting current location channel
-        for e in range(num_scenes):
-            r, c = locs[e, 1], locs[e, 0]
-            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                            int(c * 100.0 / args.map_resolution)]
-            local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
-
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Global Policy
-        if l_step == args.num_local_steps - 1:
-            # For every global step, update the full and local maps
-            for e in range(num_scenes):
-                if wait_env[e] == 1:  # New episode
-                    wait_env[e] = 0.
-                else:
-                    update_intrinsic_rew(e)
-
-                full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-                    local_map[e]
-                full_pose[e] = local_pose[e] + \
-                               torch.from_numpy(origins[e]).to(device).float()
-
-                locs = full_pose[e].cpu().numpy()
-                r, c = locs[1], locs[0]
-                loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
-                                int(c * 100.0 / args.map_resolution)]
-
-                lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                                  (local_w, local_h),
-                                                  (full_w, full_h))
-
-                planner_pose_inputs[e, 3:] = lmb[e]
-                origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
-                              lmb[e][0] * args.map_resolution / 100.0, 0.]
-
-                local_map[e] = full_map[e, :,
-                               lmb[e, 0]:lmb[e, 1],
-                               lmb[e, 2]:lmb[e, 3]]
-                local_pose[e] = full_pose[e] - \
-                                torch.from_numpy(origins[e]).to(device).float()
-
-            locs = local_pose.cpu().numpy()
-            for e in range(num_scenes):
-                global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-            global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :]
-            global_input[:, 4:8, :, :] = \
-                nn.MaxPool2d(args.global_downscaling)(
-                    full_map[:, 0:4, :, :])
-            global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
-
-            goal_cat_id = torch.from_numpy(np.asarray(
-                [infos[env_idx]['goal_cat_id'] for env_idx
-                 in range(num_scenes)]))
-            # goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
-
-            extras[:, 0] = global_orientation[:, 0]
-            extras[:, 1] = goal_cat_id
-
-            # Get exploration reward and metrics
-            g_reward = torch.from_numpy(np.asarray(
-                [infos[env_idx]['g_reward'] for env_idx in range(num_scenes)])
-            ).float().to(device)
-            g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
-
-            g_process_rewards += g_reward.cpu().numpy()
-            g_total_rewards = g_process_rewards * \
-                              (1 - g_masks.cpu().numpy())
-            g_process_rewards *= g_masks.cpu().numpy()
-            per_step_g_rewards.append(np.mean(g_reward.cpu().numpy()))
-
-            if np.sum(g_total_rewards) != 0:
-                for total_rew in g_total_rewards:
-                    if total_rew != 0:
-                        g_episode_rewards.append(total_rew)
-                # 记录每个episode的平均奖励
-                global_eps_rewards.append(np.mean(g_total_rewards))
-
-            # Add samples to global policy storage
-            # if step == 0:
-            #     g_rollouts.obs[0].copy_(global_input)
-            #     g_rollouts.extras[0].copy_(extras)
-            # else:
-            #     g_rollouts.insert(
-            #         global_input, g_rec_states,
-            #         g_action, g_action_log_prob, g_value,
-            #         g_reward, g_masks, extras
-            #     )
-
-            # 根据是否使用SEA选择不同的全局目标生成方式
-            if args.use_sea_atlas:
-                # 从环境信息中收集可见物体并计算场所置信度
-                visible_objects = [infos[e].get('visible_objects', [])
-                                   for e in range(num_scenes)]
-                beliefs = []
-                for e in range(num_scenes):
-                    belief_e = sea_manager.localize(visible_objects[e])
-                    beliefs.append(belief_e)
-                global_goals = []
-                for e in range(num_scenes):
-                    goal_cat = infos[e]['goal_cat_id']
-                    subgoal_place = sea_manager.select_subgoal(goal_cat, beliefs[e])
-                    try:
-                        subgoal_coord = place_to_coord[subgoal_place]
-                    except Exception:
-                        subgoal_coord = [0, 0]
-                    global_goals.append(subgoal_coord)
-            else:
-                # 若不使用SEA，则继续采样全局策略进行RL更新
-                # 在初始阶段尚无上一时刻的隐藏状态，因而只缓存当前观测
-                if step < args.num_local_steps:
-                    g_rollouts.obs[0].copy_(global_input)
-                    g_rollouts.extras[0].copy_(extras)
-                else:
-                    g_rollouts.insert(
-                        global_input, g_rec_states,
-                        g_action, g_action_log_prob, g_value,
-                        g_reward, g_masks, extras
-                    )
-
-                    # 使用RL全局策略采样下一步子目标
-                g_value, g_action, g_action_log_prob, g_rec_states = \
-                    g_policy.act(
-                        g_rollouts.obs[g_step + 1],
-                        g_rollouts.rec_states[g_step + 1],
-                        g_rollouts.masks[g_step + 1],
-                        extras=g_rollouts.extras[g_step + 1],
-                        deterministic=False
-                    )
-                cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-                global_goals = [[int(action[0] * local_w),
-                                 int(action[1] * local_h)]
-                                for action in cpu_actions]
-                global_goals = [[min(x, int(local_w - 1)),
-                                 min(y, int(local_h - 1))]
-                                for x, y in global_goals]
-
-            # Sample long-term goal from global policy
-            g_value, g_action, g_action_log_prob, g_rec_states = \
-                g_policy.act(
-                    g_rollouts.obs[g_step + 1],
-                    g_rollouts.rec_states[g_step + 1],
-                    g_rollouts.masks[g_step + 1],
-                    extras=g_rollouts.extras[g_step + 1],
-                    deterministic=False
-                )
-            cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-            global_goals = [[int(action[0] * local_w),
-                             int(action[1] * local_h)]
-                            for action in cpu_actions]
-            global_goals = [[min(x, int(local_w - 1)),
-                             min(y, int(local_h - 1))]
-                            for x, y in global_goals]
-
-            g_reward = 0
-            g_masks = torch.ones(num_scenes).float().to(device)
-
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Update long-term goal if target object is found
-        found_goal = [0 for _ in range(num_scenes)]
-        goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
-
-        for e in range(num_scenes):
-            goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-
-        for e in range(num_scenes):
-            cn = infos[e]['goal_cat_id'] + 4
-            if local_map[e, cn, :, :].sum() != 0.:
-                cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
-                cat_semantic_scores = cat_semantic_map
-                cat_semantic_scores[cat_semantic_scores > 0] = 1.
-                goal_maps[e] = cat_semantic_scores
-                found_goal[e] = 1
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Take action and get next observation
-        planner_inputs = [{} for e in range(num_scenes)]
-        for e, p_input in enumerate(planner_inputs):
-            p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
-            p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
-            p_input['pose_pred'] = planner_pose_inputs[e]
-            p_input['goal'] = goal_maps[e]  # global_goals[e]
-            p_input['new_goal'] = l_step == args.num_local_steps - 1
-            p_input['found_goal'] = found_goal[e]
-            p_input['wait'] = wait_env[e] or finished[e]
-            if args.visualize or args.print_images:
-                local_map[e, -1, :, :] = 1e-5
-                p_input['sem_map_pred'] = local_map[e, 4:, :,
-                                          :].argmax(0).cpu().numpy()
-
-        obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Training
-        # torch.set_grad_enabled(True)
-        # if g_step % args.num_global_steps == args.num_global_steps - 1 \
-        #         and l_step == args.num_local_steps - 1:
-        #     if not args.eval:
-        #         g_next_value = g_policy.get_value(
-        #             g_rollouts.obs[-1],
-        #             g_rollouts.rec_states[-1],
-        #             g_rollouts.masks[-1],
-        #             extras=g_rollouts.extras[-1]
-        #         ).detach()
-        #
-        #         g_rollouts.compute_returns(g_next_value, args.use_gae,
-        #                                    args.gamma, args.tau)
-        #         g_value_loss, g_action_loss, g_dist_entropy = \
-        #             g_agent.update(g_rollouts)
-        #         g_value_losses.append(g_value_loss)
-        #         g_action_losses.append(g_action_loss)
-        #         g_dist_entropies.append(g_dist_entropy)
-        #     g_rollouts.after_update()
-        #
-        # torch.set_grad_enabled(False)
-
-        # Training，仅在使用RL全局策略时执行
-        if not args.use_sea_atlas:
-            torch.set_grad_enabled(True)
-            if g_step % args.num_global_steps == args.num_global_steps - 1 \
-                    and l_step == args.num_local_steps - 1:
-                if not args.eval:
-                    g_next_value = g_policy.get_value(
-                        g_rollouts.obs[-1],
-                        g_rollouts.rec_states[-1],
-                        g_rollouts.masks[-1],
-                        extras=g_rollouts.extras[-1]
-                    ).detach()
-
-                    g_rollouts.compute_returns(g_next_value, args.use_gae,
-                                               args.gamma, args.tau)
-                    g_value_loss, g_action_loss, g_dist_entropy = \
-                        g_agent.update(g_rollouts)
-                    g_value_losses.append(g_value_loss)
-                    g_action_losses.append(g_action_loss)
-                    g_dist_entropies.append(g_dist_entropy)
-                g_rollouts.after_update()
-
-            torch.set_grad_enabled(False)
-
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Logging
-        if step % args.log_interval == 0:
-            end = time.time()
-            time_elapsed = time.gmtime(end - start)
-            log = " ".join([
-                "Time: {0:0=2d}d".format(time_elapsed.tm_mday - 1),
-                "{},".format(time.strftime("%Hh %Mm %Ss", time_elapsed)),
-                "num timesteps {},".format(step * num_scenes),
-                "FPS {},".format(int(step * num_scenes / (end - start)))
-            ])
-
-            log += "\n\tRewards:"
-
-            if len(g_episode_rewards) > 0:
-                log += " ".join([
-                    " Global step mean/med rew:",
-                    "{:.4f}/{:.4f},".format(
-                        np.mean(per_step_g_rewards),
-                        np.median(per_step_g_rewards)),
-                    " Global eps mean/med/min/max eps rew:",
-                    "{:.3f}/{:.3f}/{:.3f}/{:.3f},".format(
-                        np.mean(g_episode_rewards),
-                        np.median(g_episode_rewards),
-                        np.min(g_episode_rewards),
-                        np.max(g_episode_rewards))
-                ])
-
-            if args.eval:
-                total_success = []
-                total_spl = []
-                total_dist = []
-                for e in range(args.num_processes):
-                    for acc in episode_success[e]:
-                        total_success.append(acc)
-                    for dist in episode_dist[e]:
-                        total_dist.append(dist)
-                    for spl in episode_spl[e]:
-                        total_spl.append(spl)
-
-                if len(total_spl) > 0:
-                    log += " ObjectNav succ/spl/dtg:"
-                    log += " {:.3f}/{:.3f}/{:.3f}({:.0f}),".format(
-                        np.mean(total_success),
-                        np.mean(total_spl),
-                        np.mean(total_dist),
-                        len(total_spl))
-            else:
-                if len(episode_success) > 100:
-                    log += " ObjectNav succ/spl/dtg:"
-                    log += " {:.3f}/{:.3f}/{:.3f}({:.0f}),".format(
-                        np.mean(episode_success),
-                        np.mean(episode_spl),
-                        np.mean(episode_dist),
-                        len(episode_spl))
-
-            log += "\n\tLosses:"
-            if len(g_value_losses) > 0 and not args.eval:
-                log += " ".join([
-                    " Policy Loss value/action/dist:",
-                    "{:.3f}/{:.3f}/{:.3f},".format(
-                        np.mean(g_value_losses),
-                        np.mean(g_action_losses),
-                        np.mean(g_dist_entropies))
-                ])
-
-            print(log)
-            logging.info(log)
-        # ------------------------------------------------------------------
-
-        # ------------------------------------------------------------------
-        # Save best models
-        if (step * num_scenes) % args.save_interval < \
-                num_scenes:
-            if len(g_episode_rewards) >= 1000 and \
-                    (np.mean(g_episode_rewards) >= best_g_reward) \
-                    and not args.eval:
-                torch.save(g_policy.state_dict(),
-                           os.path.join(log_dir, "model_best.pth"))
-                best_g_reward = np.mean(g_episode_rewards)
-
-        # Save periodic models
-        if (step * num_scenes) % args.save_periodic < \
-                num_scenes:
-            total_steps = step * num_scenes
-            if not args.eval:
-                torch.save(g_policy.state_dict(),
-                           os.path.join(dump_dir,
-                                        "periodic_{}.pth".format(total_steps)))
-        # ------------------------------------------------------------------
-
-    # Print and save model performance numbers during evaluation
-    if args.eval:
-        print("Dumping eval details...")
-
-        total_success = []
-        total_spl = []
-        total_dist = []
-        for e in range(args.num_processes):
-            for acc in episode_success[e]:
-                total_success.append(acc)
-            for dist in episode_dist[e]:
-                total_dist.append(dist)
-            for spl in episode_spl[e]:
-                total_spl.append(spl)
-
-        if len(total_spl) > 0:
-            log = "Final ObjectNav succ/spl/dtg:"
-            log += " {:.3f}/{:.3f}/{:.3f}({:.0f}),".format(
-                np.mean(total_success),
-                np.mean(total_spl),
-                np.mean(total_dist),
-                len(total_spl))
-
-        print(log)
-        logging.info(log)
-
-        # Save the spl per category
-        log = "Success | SPL per category\n"
-        for key in success_per_category:
-            log += "{}: {} | {}\n".format(key,
-                                          sum(success_per_category[key]) /
-                                          len(success_per_category[key]),
-                                          sum(spl_per_category[key]) /
-                                          len(spl_per_category[key]))
-
-        print(log)
-        logging.info(log)
-
-        with open('{}/{}_spl_per_cat_pred_thr.json'.format(
-                dump_dir, args.split), 'w') as f:
-            json.dump(spl_per_category, f)
-
-        with open('{}/{}_success_per_cat_pred_thr.json'.format(
-                dump_dir, args.split), 'w') as f:
-            json.dump(success_per_category, f)
-
-    # 绘制奖励曲线
-    plt.plot(global_eps_rewards, label="Global eps mean rew")
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
-    plt.legend()
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
+class SemanticGraph:
+    def __init__(self):
+        # Lists of graph nodes
+        self.place_nodes = []   # each place can be a cluster id or coordinate
+        self.image_nodes = []   # each image node corresponds to a viewpoint
+        self.object_nodes = []  # each object node corresponds to a detected object category
+        # 记录每个place对应的坐标信息，键为place_id，值为[x, y]
+        self.place_coords = {}
+        self.place_image_affinity = {}  # key: (place_id, image_id), value: affinity score
+        self.image_object_affinity = {} # key: (image_id, object_id), value: affinity score
+        self.image_adj = {}             # key: (image_id, neighbor_image_id), value: 1 if connected
+        self.place_cluster = {}         # mapping image_id -> place_id
+        self.next_place_id = 0
+        self.next_image_id = 0
+        self.next_object_id = 0
+
+    def add_place(self, place_feature=None):
+        """Create a new place node (cluster) in the graph."""
+        place_id = self.next_place_id
+        self.next_place_id += 1
+        # Optionally store features or coordinates
+        self.place_nodes.append(place_id)
+        return place_id
+
+    def add_image(self, image_feature=None, place_id=None):
+        """Add an image node (viewpoint) to the graph, and link to a place."""
+        image_id = self.next_image_id
+        self.next_image_id += 1
+        self.image_nodes.append(image_id)
+        if place_id is not None:
+            # Connect image to place with initial affinity (e.g., 1.0)
+            self.place_image_affinity[(place_id, image_id)] = 1.0
+            self.place_cluster[image_id] = place_id
+        return image_id
+
+    def add_object(self, object_category, image_id):
+        """Add an object node with given category, and link to the image node."""
+        # Check if object category already has a node
+        for obj_id, cat in self.object_nodes:
+            if cat == object_category:
+                # Link existing object node to image
+                self.image_object_affinity[(image_id, obj_id)] = 1.0
+                return obj_id
+        # Else create a new object node
+        object_id = self.next_object_id
+        self.next_object_id += 1
+        self.object_nodes.append((object_id, object_category))
+        self.image_object_affinity[(image_id, object_id)] = 1.0
+        return object_id
+
+    def from_dict(data):
+        """根据字典数据还原SemanticGraph对象"""
+        sg = SemanticGraph()
+        sg.place_nodes = data.get('place_nodes', [])
+        sg.image_nodes = data.get('image_nodes', [])
+        sg.object_nodes = data.get('object_nodes', [])
+        sg.place_image_affinity = data.get('place_image_affinity', {})
+        sg.image_object_affinity = data.get('image_object_affinity', {})
+        sg.image_adj = data.get('image_adj', {})
+        sg.place_cluster = data.get('place_cluster', {})
+        sg.next_place_id = data.get('next_place_id', len(sg.place_nodes))
+        sg.next_image_id = data.get('next_image_id', len(sg.image_nodes))
+        sg.next_object_id = data.get('next_object_id', len(sg.object_nodes))
+        # 读取place的坐标信息，键转换为int
+        sg.place_coords = {int(k): v for k, v in data.get('place_coords', {}).items()}
+        return sg
+
+
+
+    def connect_images(self, img_id1, img_id2):
+        """Connect two image nodes (e.g., when agent moves between viewpoints)."""
+        self.image_adj[(img_id1, img_id2)] = 1
+        self.image_adj[(img_id2, img_id1)] = 1
+
+    def update(self, observation):
+        """
+        Update the semantic graph given a new observation.
+        - observation may include current image features and detected objects.
+        """
+        # Pseudocode outline (needs actual implementation):
+        # 1. Extract image features and object detections from observation.
+        # 2. Compare current image to previous image nodes (cosine similarity).
+        # 3. If new place (image similarity below threshold): add new image node & connect to a new place cluster.
+        # 4. Else, update existing image node or link accordingly.
+        # 5. For each detected object: add to graph if new, or update link strength.
+        pass
+
+    def get_place_adjacency(self):
+        """Return adjacency of place clusters inferred from connected image nodes."""
+        # Build place-place adjacency: if two places share an image connectivity, mark reachable.
+        place_adj = np.zeros((self.next_place_id, self.next_place_id))
+        for (img1, img2), conn in self.image_adj.items():
+            if img1 in self.place_cluster and img2 in self.place_cluster:
+                p1 = self.place_cluster[img1]
+                p2 = self.place_cluster[img2]
+                if p1 != p2:
+                    place_adj[p1, p2] = 1
+                    place_adj[p2, p1] = 1
+        return place_adj
+
+    def get_place_object_counts(self):
+        """Return matrix of counts of object nodes connected to each place cluster."""
+        # Count number of object connections per place cluster.
+        counts = np.zeros((self.next_place_id, ))  # flatten for simplicity
+        for (img_id, obj_id), affinity in self.image_object_affinity.items():
+            if img_id in self.place_cluster:
+                p = self.place_cluster[img_id]
+                counts[p] += 1  # or affinity
+        return counts
