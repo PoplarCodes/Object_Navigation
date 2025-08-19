@@ -7,7 +7,8 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
-
+from tsg import TinyTSG, pick_frontier_goal
+import pickle  # 用于持久化存储 TSG 图
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
 from envs import make_vec_envs
@@ -35,6 +36,11 @@ def main():
         os.makedirs(log_dir)
     if not os.path.exists(dump_dir):
         os.makedirs(dump_dir)
+
+    # 专门用于存放 TSG 图数据的目录
+    tsg_dir = os.path.join('.', 'tmp', 'models')
+    if not os.path.exists(tsg_dir):
+        os.makedirs(tsg_dir)
 
     logging.basicConfig(
         filename=log_dir + 'train.log',
@@ -219,6 +225,12 @@ def main():
 
     # 调用函数初始化
     init_map_and_pose()
+
+    # —— 长期记忆：为每个并行环境准备一个 TSG
+    tsg_list = [TinyTSG() for _ in range(num_scenes)]
+
+    # 早期“纯探索”策略阈值（覆盖率低于该阈值则优先探索，之后优先语义指引）
+    FRONTIER_COVERAGE_THR = 0.35  # 可调：0.25~0.5 之间比较稳
 
     # 定义全局策略的观测空间
     # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
@@ -448,6 +460,26 @@ def main():
                 local_pose[e] = full_pose[e] - \
                                 torch.from_numpy(origins[e]).to(device).float()
 
+            # —— 更新 TSG（基于 full_map 的障碍 / 探索）
+            for e in range(num_scenes):
+                # full_map 第0/1通道分别为障碍和已探索
+                occ_full = (full_map[e, 0].cpu().numpy() > 0.5).astype(np.uint8)
+                exp_full = (full_map[e, 1].cpu().numpy() > 0.5).astype(np.uint8)
+                tsg_list[e].rebuild_rooms_from_fullmap(occ_full, exp_full)
+
+                # 根据当前全局位姿定位所在房间，融合语义并更新连通性
+                locs = full_pose[e].cpu().numpy()
+                r = int(locs[1] * 100.0 / args.map_resolution)
+                c = int(locs[0] * 100.0 / args.map_resolution)
+                rid = tsg_list[e].locate_room(r, c)
+
+                sem_local = local_map[e, 4:, :, :].detach().cpu().numpy()
+                tsg_list[e].integrate_semantics(rid, sem_local, thr=0.0)
+                tsg_list[e].update_connectivity_on_transition(rid, (r, c))
+                # 将更新后的 TSG 持久化到文件，便于离线分析
+                with open(os.path.join(tsg_dir, f"tsg_env{e}.pkl"), "wb") as f:
+                    pickle.dump(tsg_list[e], f)
+
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
                 global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
@@ -519,20 +551,50 @@ def main():
 
         # ------------------------------------------------------------------
         # Update long-term goal if target object is found
-        found_goal = [0 for _ in range(num_scenes)]
+        # found_goal = [0 for _ in range(num_scenes)]
+        # —— 长期目标选择：语义直观 > 前沿探索 > 语义图 > 策略预测
         goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
+        found_goal = [0 for _ in range(num_scenes)]
 
+        # (1) 默认使用策略网络给出的点
         for e in range(num_scenes):
-            goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
+            # goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
+            gy, gx = global_goals[e][0], global_goals[e][1]
+            goal_maps[e][gy, gx] = 1.0
 
+        # (2) 若当前帧可见目标类别，则直接将语义热区作为目标
         for e in range(num_scenes):
-            cn = infos[e]['goal_cat_id'] + 4
+            # cn = infos[e]['goal_cat_id'] + 4
+            cn = infos[e]['goal_cat_id'] + 4  # 目标类别对应的通道
             if local_map[e, cn, :, :].sum() != 0.:
-                cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
-                cat_semantic_scores = cat_semantic_map
-                cat_semantic_scores[cat_semantic_scores > 0] = 1.
-                goal_maps[e] = cat_semantic_scores
+                cat_map = (local_map[e, cn, :, :].cpu().numpy() > 0).astype(np.float32)
+                goal_maps[e] = cat_map
                 found_goal[e] = 1
+
+        # (3) 未见目标时：覆盖率低则前沿探索，否则使用 TSG
+        for e in range(num_scenes):
+            if found_goal[e] == 1:
+                continue  # 已找到目标
+
+            explored = (full_map[e, 1].cpu().numpy() > 0.5).astype(np.uint8)
+            coverage = explored.mean()
+
+            if coverage < FRONTIER_COVERAGE_THR:
+                # 前期：探索最大未知区域
+                goal_maps[e] = pick_frontier_goal(local_map[e, 0:2, :, :].cpu().numpy())
+            else:
+                # 后期：利用 TSG 选择最可能含目标的房间入口
+                goal_cat_id = int(infos[e]['goal_cat_id'])
+                pick = tsg_list[e].pick_room_for_goal(goal_cat_id)
+                if pick is not None:
+                    _, (gr, gc) = pick
+                    gx1, gx2, gy1, gy2 = lmb[e]
+                    lr, lc = gr - gx1, gc - gy1
+                    if 0 <= lr < local_w and 0 <= lc < local_h:
+                        goal_map = np.zeros((local_w, local_h), dtype=np.float32)
+                        goal_map[lr, lc] = 1.0
+                        goal_maps[e] = goal_map
+                # 若 TSG 没有提供有效入口，保留策略默认点
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
