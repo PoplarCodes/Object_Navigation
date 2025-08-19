@@ -7,8 +7,7 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
-from semantic_graph import SemanticGraph  # 引入语义图结构
-from sea_atlas_manager import SEAAtlasManager  # 引入SEA图集管理器
+
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
 from envs import make_vec_envs
@@ -21,10 +20,6 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def main():
     args = get_args()
-
-    # 若外部未定义use_sea_atlas参数，这里设置默认值False
-    if not hasattr(args, 'use_sea_atlas'):
-        args.use_sea_atlas = False
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -52,32 +47,6 @@ def main():
     num_scenes = args.num_processes  # 并行场景的数量
     num_episodes = int(args.num_eval_episodes)
     device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
-
-    # 根据参数决定是否启用语义环境图集
-    if args.use_sea_atlas:
-        sea_manager = SEAAtlasManager()  # 初始化SEA管理器
-        # 从预先保存的语义图文件中加载训练场景数据
-        training_graphs = []
-        graph_path = getattr(args, 'training_graphs_path', 'training_graphs.json')
-        if os.path.exists(graph_path):
-            with open(graph_path, 'r') as f:
-                graphs_data = json.load(f)
-            for g in graphs_data:
-                training_graphs.append(SemanticGraph.from_dict(g))
-        else:
-            logging.warning(f"未找到训练语义图文件 {graph_path}, 将使用空图集")
-        # 利用加载的语义图构建全局SEA图集
-        sea_manager.build_atlas(training_graphs)
-        # 构建簇索引到坐标的映射，索引来自SEA图集的place_ids顺序
-        place_to_coord = {}
-        for idx, place_id in enumerate(sea_manager.place_ids):
-            for sg in training_graphs:
-                if place_id in getattr(sg, 'place_coords', {}):
-                    place_to_coord[idx] = sg.place_coords[place_id]
-                    break
-    else:
-        sea_manager = None
-        place_to_coord = {}
 
     g_masks = torch.ones(num_scenes).float().to(device)  # 全 1 的张量，用于记录每个场景的掩码信息
 
@@ -343,55 +312,20 @@ def main():
     g_rollouts.extras[0].copy_(extras)
 
     # Run Global Policy (global_goals = Long-Term Goal)
-    # g_value, g_action, g_action_log_prob, g_rec_states = \
-    #     g_policy.act(
-    #         g_rollouts.obs[0],
-    #         g_rollouts.rec_states[0],
-    #         g_rollouts.masks[0],
-    #         extras=g_rollouts.extras[0],
-    #         deterministic=False
-    #     )
-    #
-    # cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-    # global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
-    #                 for action in cpu_actions]
-    # global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
-    #                 for x, y in global_goals]
+    g_value, g_action, g_action_log_prob, g_rec_states = \
+        g_policy.act(
+            g_rollouts.obs[0],
+            g_rollouts.rec_states[0],
+            g_rollouts.masks[0],
+            extras=g_rollouts.extras[0],
+            deterministic=False
+        )
 
-    # 从环境信息中提取当前可见物体类别
-    visible_objects = [infos[e].get('visible_objects', []) for e in range(num_scenes)]
-
-    if args.use_sea_atlas:
-        # 使用SEA图集进行定位并选择子目标
-        beliefs = []
-        for e in range(num_scenes):
-            belief_e = sea_manager.localize(visible_objects[e])  # 计算当前环境的场所置信度
-            beliefs.append(belief_e)
-        global_goals = []
-        for e in range(num_scenes):
-            goal_cat = infos[e]['goal_cat_id']  # 当前任务目标类别
-            subgoal_place = sea_manager.select_subgoal(goal_cat, beliefs[e])  # 选择子目标位置簇
-            try:
-                subgoal_coord = place_to_coord[subgoal_place]  # 将簇索引转换为坐标
-            except Exception:
-                subgoal_coord = [0, 0]  # 若映射缺失则回退到原点
-            global_goals.append(subgoal_coord)
-    else:
-        # 采用原有全局策略采样子目标
-        g_value, g_action, g_action_log_prob, g_rec_states = \
-            g_policy.act(
-                g_rollouts.obs[0],
-                g_rollouts.rec_states[0],
-                g_rollouts.masks[0],
-                extras=g_rollouts.extras[0],
-                deterministic=False
-            )
-
-        cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-        global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
-                        for action in cpu_actions]
-        global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
-                        for x, y in global_goals]
+    cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
+    global_goals = [[int(action[0] * local_w), int(action[1] * local_h)]
+                    for action in cpu_actions]
+    global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
+                    for x, y in global_goals]
 
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
@@ -551,63 +485,15 @@ def main():
                 global_eps_rewards.append(np.mean(g_total_rewards))
 
             # Add samples to global policy storage
-            # if step == 0:
-            #     g_rollouts.obs[0].copy_(global_input)
-            #     g_rollouts.extras[0].copy_(extras)
-            # else:
-            #     g_rollouts.insert(
-            #         global_input, g_rec_states,
-            #         g_action, g_action_log_prob, g_value,
-            #         g_reward, g_masks, extras
-            #     )
-
-            # 根据是否使用SEA选择不同的全局目标生成方式
-            if args.use_sea_atlas:
-                # 从环境信息中收集可见物体并计算场所置信度
-                visible_objects = [infos[e].get('visible_objects', [])
-                                   for e in range(num_scenes)]
-                beliefs = []
-                for e in range(num_scenes):
-                    belief_e = sea_manager.localize(visible_objects[e])
-                    beliefs.append(belief_e)
-                global_goals = []
-                for e in range(num_scenes):
-                    goal_cat = infos[e]['goal_cat_id']
-                    subgoal_place = sea_manager.select_subgoal(goal_cat, beliefs[e])
-                    try:
-                        subgoal_coord = place_to_coord[subgoal_place]
-                    except Exception:
-                        subgoal_coord = [0, 0]
-                    global_goals.append(subgoal_coord)
+            if step == 0:
+                g_rollouts.obs[0].copy_(global_input)
+                g_rollouts.extras[0].copy_(extras)
             else:
-                # 若不使用SEA，则继续采样全局策略进行RL更新
-                # 在初始阶段尚无上一时刻的隐藏状态，因而只缓存当前观测
-                if step < args.num_local_steps:
-                    g_rollouts.obs[0].copy_(global_input)
-                    g_rollouts.extras[0].copy_(extras)
-                else:
-                    g_rollouts.insert(
-                        global_input, g_rec_states,
-                        g_action, g_action_log_prob, g_value,
-                        g_reward, g_masks, extras
-                    )
-
-                    # 使用RL全局策略采样下一步子目标
-                g_value, g_action, g_action_log_prob, g_rec_states = \
-                    g_policy.act(
-                        g_rollouts.obs[g_step + 1],
-                        g_rollouts.rec_states[g_step + 1],
-                        g_rollouts.masks[g_step + 1],
-                        extras=g_rollouts.extras[g_step + 1],
-                        deterministic=False
-                    )
-                cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
-                global_goals = [[int(action[0] * local_w),
-                                 int(action[1] * local_h)]
-                                for action in cpu_actions]
-                global_goals = [[min(x, int(local_w - 1)),
-                                 min(y, int(local_h - 1))]
-                                for x, y in global_goals]
+                g_rollouts.insert(
+                    global_input, g_rec_states,
+                    g_action, g_action_log_prob, g_value,
+                    g_reward, g_masks, extras
+                )
 
             # Sample long-term goal from global policy
             g_value, g_action, g_action_log_prob, g_rec_states = \
@@ -670,52 +556,27 @@ def main():
 
         # ------------------------------------------------------------------
         # Training
-        # torch.set_grad_enabled(True)
-        # if g_step % args.num_global_steps == args.num_global_steps - 1 \
-        #         and l_step == args.num_local_steps - 1:
-        #     if not args.eval:
-        #         g_next_value = g_policy.get_value(
-        #             g_rollouts.obs[-1],
-        #             g_rollouts.rec_states[-1],
-        #             g_rollouts.masks[-1],
-        #             extras=g_rollouts.extras[-1]
-        #         ).detach()
-        #
-        #         g_rollouts.compute_returns(g_next_value, args.use_gae,
-        #                                    args.gamma, args.tau)
-        #         g_value_loss, g_action_loss, g_dist_entropy = \
-        #             g_agent.update(g_rollouts)
-        #         g_value_losses.append(g_value_loss)
-        #         g_action_losses.append(g_action_loss)
-        #         g_dist_entropies.append(g_dist_entropy)
-        #     g_rollouts.after_update()
-        #
-        # torch.set_grad_enabled(False)
+        torch.set_grad_enabled(True)
+        if g_step % args.num_global_steps == args.num_global_steps - 1 \
+                and l_step == args.num_local_steps - 1:
+            if not args.eval:
+                g_next_value = g_policy.get_value(
+                    g_rollouts.obs[-1],
+                    g_rollouts.rec_states[-1],
+                    g_rollouts.masks[-1],
+                    extras=g_rollouts.extras[-1]
+                ).detach()
 
-        # Training，仅在使用RL全局策略时执行
-        if not args.use_sea_atlas:
-            torch.set_grad_enabled(True)
-            if g_step % args.num_global_steps == args.num_global_steps - 1 \
-                    and l_step == args.num_local_steps - 1:
-                if not args.eval:
-                    g_next_value = g_policy.get_value(
-                        g_rollouts.obs[-1],
-                        g_rollouts.rec_states[-1],
-                        g_rollouts.masks[-1],
-                        extras=g_rollouts.extras[-1]
-                    ).detach()
+                g_rollouts.compute_returns(g_next_value, args.use_gae,
+                                           args.gamma, args.tau)
+                g_value_loss, g_action_loss, g_dist_entropy = \
+                    g_agent.update(g_rollouts)
+                g_value_losses.append(g_value_loss)
+                g_action_losses.append(g_action_loss)
+                g_dist_entropies.append(g_dist_entropy)
+            g_rollouts.after_update()
 
-                    g_rollouts.compute_returns(g_next_value, args.use_gae,
-                                               args.gamma, args.tau)
-                    g_value_loss, g_action_loss, g_dist_entropy = \
-                        g_agent.update(g_rollouts)
-                    g_value_losses.append(g_value_loss)
-                    g_action_losses.append(g_action_loss)
-                    g_dist_entropies.append(g_dist_entropy)
-                g_rollouts.after_update()
-
-            torch.set_grad_enabled(False)
-
+        torch.set_grad_enabled(False)
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
