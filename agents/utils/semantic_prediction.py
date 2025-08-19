@@ -47,23 +47,29 @@ class SemanticPredMaskRCNN():
 
         for j, class_idx in enumerate(
                 seg_predictions[0]['instances'].pred_classes.cpu().numpy()):
-            #if class_idx in list(coco_categories_mapping.keys()):
-            # 获取当前检测的置信度和掩码
+            # 获取当前检测的置信度、掩码以及包围盒
             score = seg_predictions[0]['instances'].scores[j].item()
             obj_mask = seg_predictions[0]['instances'].pred_masks[j]
             mask_area = obj_mask.sum().item()
-
+            bbox = seg_predictions[0]['instances'].pred_boxes.tensor[j]
+            box_w = (bbox[2] - bbox[0]).item()
+            box_h = (bbox[3] - bbox[1]).item()
             if class_idx in list(coco_categories_mapping.keys()) \
                     and score >= self.args.sem_pred_prob_thr \
                     and mask_area >= self.args.min_mask_area:
                 # 通过面积和置信度过滤误检
                 idx = coco_categories_mapping[class_idx]
-                #obj_mask = seg_predictions[0]['instances'].pred_masks[j] * 1.
-                #semantic_input[:, :, idx] += obj_mask.cpu().numpy()
-                # 对于小物体额外限制最大面积，过滤如将 bed 误判为 chair 的情况
+                # 对于小物体额外限制掩码面积和长宽比
+                # 过滤床等大物体被误判为chair，以及狭长障碍物被误判的问题
                 if idx in small_object_indices:
                     img_area = img.shape[0] * img.shape[1]
                     if mask_area > self.args.max_mask_ratio * img_area:
+                        continue
+                    # 避免零宽高导致除零错误
+                    if box_w <= 0 or box_h <= 0:
+                        continue
+                    bbox_ratio = max(box_w / box_h, box_h / box_w)
+                    if bbox_ratio > self.args.max_bbox_ratio:
                         continue
 
                 # 仅保留当前类别得分最高的掩码
