@@ -9,7 +9,7 @@ import skimage.morphology
 import habitat
 
 from envs.utils.fmm_planner import FMMPlanner
-from constants import coco_categories
+from constants import coco_categories, object_room_map
 import envs.utils.pose as pu
 
 
@@ -58,6 +58,7 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.object_boundary = None
         self.goal_idx = None
         self.goal_name = None
+        self.goal_rooms = []  # 记录由目标物体推断出的房间列表
         self.map_obj_origin = None
         self.starting_loc = None
         self.starting_distance = None
@@ -138,6 +139,8 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.object_boundary = object_boundary
         self.goal_idx = goal_idx
         self.goal_name = goal_name
+        # 根据目标物体推断可能房间
+        self.goal_rooms = object_room_map.get(goal_name, [])
         self.map_obj_origin = map_obj_origin
 
         self.starting_distance = self.gt_planner.fmm_dist[self.starting_loc]\
@@ -250,6 +253,8 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.object_boundary = object_boundary
         self.goal_idx = goal_idx
         self.goal_name = goal_name
+        # 根据目标物体推断可能房间
+        self.goal_rooms = object_room_map.get(goal_name, [])
         self.map_obj_origin = map_obj_origin
 
         self.starting_distance = self.gt_planner.fmm_dist[self.starting_loc] \
@@ -342,6 +347,9 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.info['sensor_pose'] = [0., 0., 0.]
         self.info['goal_cat_id'] = self.goal_idx
         self.info['goal_name'] = self.goal_name
+        # 根据目标物体推断可能房间，将结果写入信息字典
+        self.info['goal_rooms'] = self.goal_rooms
+
 
         return state, self.info
 
@@ -402,13 +410,6 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         reward = (self.prev_distance - self.curr_distance) * \
             self.args.reward_coeff
-
-        # 每个时间步给予固定惩罚，鼓励智能体缩短路径
-        reward -= 0.01
-        # 当距离小于成功阈值时，根据剩余步数给予额外奖励
-        if self.curr_distance <= self.object_boundary:
-            remaining_steps = self.args.max_episode_length - (self.timestep + 1)
-            reward += 0.01 * remaining_steps
 
         self.prev_distance = self.curr_distance
         return reward

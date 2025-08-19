@@ -46,6 +46,26 @@ coco_categories = {
     "bottle": 14
 }
 
+# 物体与可能房间的先验映射，用于根据目标物体推测其可能存在的房间
+object_room_map = {
+    "chair": ["living room", "dining room", "study", "bedroom"],
+    "couch": ["living room"],
+    "potted plant": ["living room", "office", "balcony"],
+    "bed": ["bedroom"],
+    "toilet": ["bathroom"],
+    "tv": ["living room", "bedroom"],
+    "dining-table": ["dining room", "kitchen"],
+    "oven": ["kitchen"],
+    "sink": ["kitchen", "bathroom"],
+    "refrigerator": ["kitchen"],
+    "book": ["study", "living room"],
+    "clock": ["living room", "bedroom", "kitchen"],
+    "vase": ["living room", "dining room"],
+    "cup": ["kitchen", "dining room"],
+    "bottle": ["kitchen", "dining room"],
+}
+# 使用方式：通过 object_room_map["bed"] 获取 ["bedroom"] 等房间列表
+
 coco_categories_mapping = {
     56: 0,  # chair
     57: 1,  # couch

@@ -7,6 +7,7 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
+
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
 from envs import make_vec_envs
@@ -219,13 +220,6 @@ def main():
     # 调用函数初始化
     init_map_and_pose()
 
-    # ---------- TSG 记录初始化 ----------
-    tsg_list = None
-    tsg_global_step = 0
-    if args.use_tsg_log:
-        tsg_list = [TinyTSG(ema=0.6) for _ in range(num_scenes)]
-        os.makedirs(args.tsg_dir, exist_ok=True)
-
     # 定义全局策略的观测空间
     # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
     ngc = 8 + args.num_sem_categories  # 通道数 num_sem_categories = 16
@@ -333,6 +327,20 @@ def main():
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
 
+    # 预先根据info中的房间先验生成房间目标掩码，若找不到则保持为None
+    room_goal_maps = [None for _ in range(num_scenes)]
+    for e in range(num_scenes):
+        if 'goal_rooms' in infos[e]:
+            # 将每个目标房间在语义图上投射为掩码
+            room_goal_map = np.zeros((local_w, local_h))
+            for room in infos[e]['goal_rooms']:
+                cn = room + 4  # 语义图中对应房间类别的通道
+                if cn < local_map.shape[1]:
+                    room_mask = local_map[e, cn, :, :].cpu().numpy()
+                    room_goal_map[room_mask > 0] = 1
+            if room_goal_map.sum() > 0:
+                room_goal_maps[e] = room_goal_map
+
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
     for e in range(num_scenes):
@@ -343,7 +351,10 @@ def main():
         p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
         p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
-        p_input['goal'] = goal_maps[e]  # global_goals[e]
+        # p_input['goal'] = goal_maps[e]  # global_goals[e]
+        # 若存在房间先验，则优先使用其生成的目标地图，否则使用全局策略结果
+        goal_map = room_goal_maps[e] if room_goal_maps[e] is not None else goal_maps[e]
+        p_input['goal'] = goal_map  # global_goals[e]
         p_input['new_goal'] = 1
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
@@ -454,38 +465,6 @@ def main():
                 local_pose[e] = full_pose[e] - \
                                 torch.from_numpy(origins[e]).to(device).float()
 
-            locs = full_pose.cpu().numpy()
-
-            # ====== TSG 记录（仅记录，不影响导航）======
-            if args.use_tsg_log:
-                # 1) 房间划分基于 full_map 的障碍/已探索
-                for e in range(num_scenes):
-                    occ_full = (full_map[e, 0].detach().cpu().numpy() > 0.5).astype(np.uint8)
-                    exp_full = (full_map[e, 1].detach().cpu().numpy() > 0.5).astype(np.uint8)
-                    tsg_list[e].rebuild_rooms_from_fullmap(occ_full, exp_full)
-
-                # 2) 当前 agent 的全局栅格坐标，定位所在房间；融合本地语义
-                for e in range(num_scenes):
-                    r_m, c_m = locs[e, 1], locs[e, 0]  # (y[m], x[m])
-                    gr = int(r_m * 100.0 / args.map_resolution)
-                    gc = int(c_m * 100.0 / args.map_resolution)
-                    rid = tsg_list[e].locate_room(gr, gc)
-
-                    sem_local = local_map[e, 4:4 + 15, :, :].detach().cpu().numpy()
-                    tsg_list[e].integrate_semantics(rid, sem_local, thr=0.0)
-
-                    # 记录连通性（房间切换 + 入口像素）
-                    tsg_list[e].update_connectivity_on_transition(rid, (gr, gc))
-
-                # 3) 周期性保存快照
-                tsg_global_step += 1
-                if (tsg_global_step % args.tsg_save_every) == 0:
-                    ts = int(time.time())
-                    for e in range(num_scenes):
-                        out = os.path.join(args.tsg_dir, f"tsg_env{e}_step{tsg_global_step}_{ts}.json")
-                        tsg_list[e].save(out)
-            # ============================================
-
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
                 global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
@@ -560,23 +539,31 @@ def main():
         found_goal = [0 for _ in range(num_scenes)]
         goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
-        # (1) 默认使用策略网络给出的点
         for e in range(num_scenes):
             goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-            gy, gx = global_goals[e][0], global_goals[e][1]
-            # goal_maps[e][gy, gx] = 1.0
 
-        # (2) 若当前帧可见目标类别，则直接将语义热区作为目标
+        # 预先根据info中的房间先验生成房间目标掩码
+        room_goal_maps = [None for _ in range(num_scenes)]
         for e in range(num_scenes):
-            # cn = infos[e]['goal_cat_id'] + 4
-            cn = infos[e]['goal_cat_id'] + 4  # 目标类别对应的通道
+            if 'goal_rooms' in infos[e]:
+                room_goal_map = np.zeros((local_w, local_h))
+                for room in infos[e]['goal_rooms']:
+                    cn = room + 4  # 语义图中房间类别通道
+                    if cn < local_map.shape[1]:
+                        room_mask = local_map[e, cn, :, :].cpu().numpy()
+                        room_goal_map[room_mask > 0] = 1
+                if room_goal_map.sum() > 0:
+                    room_goal_maps[e] = room_goal_map
+
+        for e in range(num_scenes):
+            cn = infos[e]['goal_cat_id'] + 4
             if local_map[e, cn, :, :].sum() != 0.:
                 cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
                 cat_semantic_scores = cat_semantic_map
                 cat_semantic_scores[cat_semantic_scores > 0] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
-
+                room_goal_maps[e] = None  # 已找到目标物体，忽略房间先验
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -586,13 +573,17 @@ def main():
             p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
             p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
             p_input['pose_pred'] = planner_pose_inputs[e]
-            p_input['goal'] = goal_maps[e]  # global_goals[e]
+            # p_input['goal'] = goal_maps[e]  # global_goals[e]
+            # 优先使用房间先验生成的目标地图，否则回退至全局策略/目标物体地图
+            goal_map = room_goal_maps[e] if room_goal_maps[e] is not None else goal_maps[e]
+            p_input['goal'] = goal_map  # global_goals[e]
             p_input['new_goal'] = l_step == args.num_local_steps - 1
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:
                 local_map[e, -1, :, :] = 1e-5
                 p_input['sem_map_pred'] = local_map[e, 4:, :,
+                                          #:].argmax(0).cpu().numpy()
                                           :].argmax(0).cpu().numpy()
 
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
