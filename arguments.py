@@ -137,7 +137,9 @@ def get_args():
     parser.add_argument('--num_sem_categories', type=float, default=16)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
-
+    parser.add_argument('--min_mask_area', type=float, default=200,
+                        help='语义掩码最小有效面积，过滤面积过小的误检')
+    
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
     parser.add_argument('--vision_range', type=int, default=100)

@@ -43,9 +43,18 @@ class SemanticPredMaskRCNN():
 
         for j, class_idx in enumerate(
                 seg_predictions[0]['instances'].pred_classes.cpu().numpy()):
-            if class_idx in list(coco_categories_mapping.keys()):
+            #if class_idx in list(coco_categories_mapping.keys()):
+            # 获取当前检测的置信度和掩码
+            score = seg_predictions[0]['instances'].scores[j].item()
+            obj_mask = seg_predictions[0]['instances'].pred_masks[j]
+            mask_area = obj_mask.sum().item()
+
+            if class_idx in list(coco_categories_mapping.keys()) \
+                    and score >= self.args.sem_pred_prob_thr \
+                    and mask_area >= self.args.min_mask_area:
+                # 通过面积和置信度过滤误检
                 idx = coco_categories_mapping[class_idx]
-                obj_mask = seg_predictions[0]['instances'].pred_masks[j] * 1.
+                #obj_mask = seg_predictions[0]['instances'].pred_masks[j] * 1.
                 semantic_input[:, :, idx] += obj_mask.cpu().numpy()
 
         return semantic_input, img
