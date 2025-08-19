@@ -139,7 +139,8 @@ def get_args():
                         help="Semantic prediction confidence threshold")
     parser.add_argument('--min_mask_area', type=float, default=200,
                         help='语义掩码最小有效面积，过滤面积过小的误检')
-    
+    parser.add_argument('--max_mask_ratio', type=float, default=0.2,
+                        help='针对小物体的最大掩码面积占比，过滤面积过大的误检')
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
     parser.add_argument('--vision_range', type=int, default=100)

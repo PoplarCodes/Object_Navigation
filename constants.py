@@ -46,6 +46,24 @@ coco_categories = {
     "bottle": 14
 }
 
+coco_categories_mapping = {
+    56: 0,  # chair
+    57: 1,  # couch
+    58: 2,  # potted plant
+    59: 3,  # bed
+    61: 4,  # toilet
+    62: 5,  # tv
+    60: 6,  # dining-table
+    69: 7,  # oven
+    71: 8,  # sink
+    72: 9,  # refrigerator
+    73: 10,  # book
+    74: 11,  # clock
+    75: 12,  # vase
+    41: 13,  # cup
+    39: 14,  # bottle
+}
+
 # 物体与可能房间的先验映射，用于根据目标物体推测其可能存在的房间
 object_room_map = {
     "chair": ["living room", "dining room", "study", "bedroom"],
@@ -78,23 +96,12 @@ room_channel_map = {
     "balcony": 7,
 }
 
-coco_categories_mapping = {
-    56: 0,  # chair
-    57: 1,  # couch
-    58: 2,  # potted plant
-    59: 3,  # bed
-    61: 4,  # toilet
-    62: 5,  # tv
-    60: 6,  # dining-table
-    69: 7,  # oven
-    71: 8,  # sink
-    72: 9,  # refrigerator
-    73: 10,  # book
-    74: 11,  # clock
-    75: 12,  # vase
-    41: 13,  # cup
-    39: 14,  # bottle
+# 需要限制最大掩码面积的小物体类别索引
+small_object_indices = {
+    coco_categories["chair"],
+    coco_categories["potted plant"],
 }
+
 
 color_palette = [
     1.0, 1.0, 1.0,

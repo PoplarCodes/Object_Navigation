@@ -13,7 +13,8 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 import detectron2.data.transforms as T
 
-from constants import coco_categories_mapping
+from constants import coco_categories_mapping, small_object_indices
+
 
 
 class SemanticPredMaskRCNN():
@@ -41,6 +42,9 @@ class SemanticPredMaskRCNN():
 
         semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
 
+        # 针对每个类别仅保留得分最高的实例，避免多个相同目标造成摇摆
+        best_masks = {}
+
         for j, class_idx in enumerate(
                 seg_predictions[0]['instances'].pred_classes.cpu().numpy()):
             #if class_idx in list(coco_categories_mapping.keys()):
@@ -55,8 +59,19 @@ class SemanticPredMaskRCNN():
                 # 通过面积和置信度过滤误检
                 idx = coco_categories_mapping[class_idx]
                 #obj_mask = seg_predictions[0]['instances'].pred_masks[j] * 1.
-                semantic_input[:, :, idx] += obj_mask.cpu().numpy()
+                #semantic_input[:, :, idx] += obj_mask.cpu().numpy()
+                # 对于小物体额外限制最大面积，过滤如将 bed 误判为 chair 的情况
+                if idx in small_object_indices:
+                    img_area = img.shape[0] * img.shape[1]
+                    if mask_area > self.args.max_mask_ratio * img_area:
+                        continue
 
+                # 仅保留当前类别得分最高的掩码
+                if idx not in best_masks or score > best_masks[idx][0]:
+                    best_masks[idx] = (score, obj_mask)
+
+        for idx, (_, mask) in best_masks.items():
+            semantic_input[:, :, idx] = mask.cpu().numpy()
         return semantic_input, img
 
 
