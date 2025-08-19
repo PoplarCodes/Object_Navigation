@@ -1,6 +1,6 @@
 import argparse
 import torch
-
+from constants import NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES
 
 def get_args():
     parser = argparse.ArgumentParser(
@@ -19,7 +19,7 @@ def get_args():
     parser.add_argument('--num_processes_on_first_gpu', type=int, default=1)
     parser.add_argument('--eval', type=int, default=0,
                         help='0: Train, 1: Evaluate (default: 0)')
-    parser.add_argument('--num_training_frames', type=int, default=100000,            #原default=10000000
+    parser.add_argument('--num_training_frames', type=int, default=10000000,            #原default=10000000
                         help='total number of training frames')
     parser.add_argument('--num_eval_episodes', type=int, default=200,
                         help="number of test episodes per scene")
@@ -97,7 +97,7 @@ def get_args():
 
     # Model Hyperparameters
     parser.add_argument('--agent', type=str, default="sem_exp")
-    parser.add_argument('--lr', type=float, default=3e-5,  # 2.5e-5
+    parser.add_argument('--lr', type=float, default=2.5e-5,
                         help='learning rate (default: 2.5e-5)')
     parser.add_argument('--global_hidden_size', type=int, default=256,
                         help='global_hidden_size')
@@ -111,7 +111,7 @@ def get_args():
                         help='use generalized advantage estimation')
     parser.add_argument('--tau', type=float, default=0.95,
                         help='gae parameter (default: 0.95)')
-    parser.add_argument('--entropy_coef', type=float, default=0.005,  #0.001
+    parser.add_argument('--entropy_coef', type=float, default=0.001,
                         help='entropy term coefficient (default: 0.01)')
     parser.add_argument('--value_loss_coef', type=float, default=0.5,
                         help='value loss coefficient (default: 0.5)')
@@ -134,7 +134,10 @@ def get_args():
                         help="Object goal reward coefficient")
     parser.add_argument('--intrinsic_rew_coeff', type=float, default=0.02,  #原0.02
                         help="intrinsic exploration reward coefficient")
-    parser.add_argument('--num_sem_categories', type=float, default=16)
+    #parser.add_argument('--num_sem_categories', type=float, default=16)
+    # 语义类别总数默认包含物体与房间两部分
+    parser.add_argument('--num_sem_categories', type=int,
+                        default=NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
     parser.add_argument('--min_mask_area', type=float, default=200,

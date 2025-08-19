@@ -96,6 +96,12 @@ room_channel_map = {
     "balcony": 7,
 }
 
+# 物体和房间类别数量，便于统一引用
+# 物体类别总数
+NUM_OBJECT_CATEGORIES = len(coco_categories)
+# 房间类别总数
+NUM_ROOM_CATEGORIES = len(room_channel_map)
+
 # 需要限制最大掩码面积的小物体类别索引
 small_object_indices = {
     coco_categories["chair"],

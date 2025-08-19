@@ -14,7 +14,7 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
-from constants import room_channel_map  # 房间名称与通道索引映射
+from constants import room_channel_map, NUM_OBJECT_CATEGORIES  # 房间名称与通道索引映射及物体类别数
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -102,6 +102,8 @@ def main():
     # 4. Past Agent Locations
     # 5,6,7,.. : Semantic Categories
     nc = args.num_sem_categories + 4  # num channels
+    # 房间语义通道在 local_map 中的起始偏移（跳过15个物体+背景）
+    room_sem_offset = len(coco_categories) + 1
 
     # Calculating full and local map sizes
     map_size = args.map_size_cm // args.map_resolution
@@ -342,7 +344,9 @@ def main():
                     room_idx = int(room)
                 if room_idx is None:
                     continue  # 找不到映射时跳过
-                cn = room_idx + 4
+                # cn = room_idx + 4
+                # 房间通道索引需避开物体通道，因此加上物体类别数偏移
+                cn = room_idx + NUM_OBJECT_CATEGORIES + 4
 
                 if cn < local_map.shape[1]:
                     room_mask = local_map[e, cn, :, :].cpu().numpy()
@@ -564,7 +568,9 @@ def main():
                         room_idx = int(room)
                     if room_idx is None:
                         continue
-                    cn = room_idx + 4  # 语义图中房间类别通道
+                    # cn = room_idx + 4  # 语义图中房间类别通道
+                    # 房间通道索引加上物体类别数偏移，避免与物体通道冲突
+                    cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 语义图中房间类别通道
                     if cn < local_map.shape[1]:
                         room_mask = local_map[e, cn, :, :].cpu().numpy()
                         room_goal_map[room_mask > 0] = 1

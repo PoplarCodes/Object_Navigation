@@ -13,8 +13,8 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 import detectron2.data.transforms as T
 
-from constants import coco_categories_mapping, small_object_indices
 
+from constants import coco_categories_mapping, small_object_indices,num_room_categories
 
 
 class SemanticPredMaskRCNN():
@@ -40,8 +40,10 @@ class SemanticPredMaskRCNN():
         if args.visualize == 2:
             img = vis_output.get_image()
 
-        semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
-
+        # semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
+        # 语义输入增加房间通道，通道顺序为：15个物体类别 + 背景 + 房间N类
+        semantic_input = np.zeros(
+            (img.shape[0], img.shape[1], 15 + 1 + num_room_categories))
         # 针对每个类别仅保留得分最高的实例，避免多个相同目标造成摇摆
         best_masks = {}
 
@@ -78,6 +80,16 @@ class SemanticPredMaskRCNN():
 
         for idx, (_, mask) in best_masks.items():
             semantic_input[:, :, idx] = mask.cpu().numpy()
+
+            # 读取房间分割结果，支持来自模型预测或外部标注
+            room_masks = seg_predictions[0].get('room_masks', None)
+            if room_masks is not None:
+                # room_masks 维度应为 [房间数, H, W]
+                if isinstance(room_masks, torch.Tensor):
+                    room_masks = room_masks.cpu().numpy()
+                for r_idx in range(min(num_room_categories, len(room_masks))):
+                    semantic_input[:, :, 16 + r_idx] = room_masks[r_idx]
+
         return semantic_input, img
 
 
