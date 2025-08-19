@@ -12,7 +12,8 @@ class Goal_Oriented_Semantic_Policy(NNBase):
 
     def __init__(self, input_shape, recurrent=False, hidden_size=512,
                  #num_sem_categories=16):
-            num_sem_categories=NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES):
+                 # num_sem_categories = 物体与房间类别总数
+                 num_sem_categories=NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES):
         super(Goal_Oriented_Semantic_Policy, self).__init__(
             recurrent, hidden_size, hidden_size)
 
@@ -205,12 +206,12 @@ class Semantic_Mapping(nn.Module):
         # 先将特征张量清零，并保持第0通道为1表示占据信息
         self.feat.zero_()
         self.feat[:, 0, :] = 1.0
-        # 观测中仅包含物体类别语义，将其平均池化后写入前部通道
-        obs_sem_channels = c - 4  # 实际观测到的物体类别数
+        # 观测中包含物体与房间语义，对所有语义通道进行平均池化后写入
+        obs_sem_channels = c - 4  # 观测语义通道数（物体+房间）
         pooled_sem = nn.AvgPool2d(self.du_scale)(obs[:, 4:, :, :])
         self.feat[:, 1:1 + obs_sem_channels, :] = pooled_sem.view(
             bs, obs_sem_channels, h // self.du_scale * w // self.du_scale)
-        # 剩余房间类别无视觉观测，保持为0
+        # 若有未观测到的房间类别，其对应通道保持为0
 
         XYZ_cm_std = XYZ_cm_std.permute(0, 3, 1, 2)
         XYZ_cm_std = XYZ_cm_std.view(XYZ_cm_std.shape[0],

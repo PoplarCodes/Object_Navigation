@@ -1,6 +1,7 @@
 
 import argparse
 import time
+import os
 
 import torch
 import numpy as np
@@ -14,20 +15,21 @@ from detectron2.utils.visualizer import ColorMode, Visualizer
 import detectron2.data.transforms as T
 
 
-from constants import coco_categories_mapping, small_object_indices,num_room_categories
-
+# 引入常量：COCO类别映射、小物体索引、房间类别数量以及物体类别数量
+from constants import (
+    coco_categories_mapping,
+    small_object_indices,
+    NUM_ROOM_CATEGORIES,
+    NUM_OBJECT_CATEGORIES,
+)
 
 class SemanticPredMaskRCNN():
 
     def __init__(self, args):
         self.segmentation_model = ImageSegmentation(args)
         self.args = args
-        # self.device = args.device
-        # # 使用更高精度的预训练模型
-        # self.model = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.COCO_V1)
-        # self.model.to(self.device)
-        # self.model.eval()
-        # self.segmentation_model = self.model
+        # 如果提供房间标注目录，则记录下来以便后续读取真实房间掩码
+        self.room_mask_dir = getattr(args, "room_mask_dir", None)
 
     def get_prediction(self, img):
         args = self.args
@@ -41,9 +43,10 @@ class SemanticPredMaskRCNN():
             img = vis_output.get_image()
 
         # semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
-        # 语义输入增加房间通道，通道顺序为：15个物体类别 + 背景 + 房间N类
+        # 构建语义输入：15个物体类别 + 背景 + 房间N类
         semantic_input = np.zeros(
-            (img.shape[0], img.shape[1], 15 + 1 + num_room_categories))
+         (img.shape[0], img.shape[1],
+         NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES))
         # 针对每个类别仅保留得分最高的实例，避免多个相同目标造成摇摆
         best_masks = {}
 
@@ -81,17 +84,28 @@ class SemanticPredMaskRCNN():
         for idx, (_, mask) in best_masks.items():
             semantic_input[:, :, idx] = mask.cpu().numpy()
 
-            # 读取房间分割结果，支持来自模型预测或外部标注
-            room_masks = seg_predictions[0].get('room_masks', None)
-            if room_masks is not None:
-                # room_masks 维度应为 [房间数, H, W]
-                if isinstance(room_masks, torch.Tensor):
-                    room_masks = room_masks.cpu().numpy()
-                for r_idx in range(min(num_room_categories, len(room_masks))):
-                    semantic_input[:, :, 16 + r_idx] = room_masks[r_idx]
-
+        # 读取房间分割结果，支持来自模型预测或外部标注
+        room_masks = seg_predictions[0].get('room_masks', None)
+        if room_masks is None:
+            room_masks = self._load_room_masks(img)
+        if room_masks is not None:
+            # room_masks 维度应为 [房间数, H, W]
+            if isinstance(room_masks, torch.Tensor):
+                room_masks = room_masks.cpu().numpy()
+            object_offset = NUM_OBJECT_CATEGORIES + 1  # 跳过物体通道和背景通道
+            for r_idx in range(min(NUM_ROOM_CATEGORIES, len(room_masks))):
+                semantic_input[:, :, object_offset + r_idx] = room_masks[r_idx]
         return semantic_input, img
 
+    def _load_room_masks(self, img):
+        """从外部标注目录读取房间掩码，便于在没有房间模型时使用真值掩码"""
+        if self.room_mask_dir is None:
+            return None
+        # 此处默认读取固定文件 room_masks.npy，实际应用中可根据图像索引区分
+        mask_path = os.path.join(self.room_mask_dir, 'room_masks.npy')
+        if os.path.exists(mask_path):
+            return np.load(mask_path)
+        return None
 
 
 def compress_sem_map(sem_map):

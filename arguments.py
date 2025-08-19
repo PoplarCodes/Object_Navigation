@@ -135,9 +135,9 @@ def get_args():
     parser.add_argument('--intrinsic_rew_coeff', type=float, default=0.02,  #原0.02
                         help="intrinsic exploration reward coefficient")
     #parser.add_argument('--num_sem_categories', type=float, default=16)
-    # 语义类别总数默认包含物体与房间两部分
+    # 语义类别总数 = 15个物体 + 1个背景 + N个房间
     parser.add_argument('--num_sem_categories', type=int,
-                        default=NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES)
+                        default=NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
     parser.add_argument('--min_mask_area', type=float, default=200,
@@ -147,6 +147,8 @@ def get_args():
     # 针对小物体的最大长宽比，避免狭长障碍物被误判为chair等目标
     parser.add_argument('--max_bbox_ratio', type=float, default=1.5,
                         help='小物体的最大长宽比，过滤形状异常的误检')
+    parser.add_argument('--room_mask_dir', type=str, default=None,
+                        help='包含真实房间掩码的目录，若提供则直接读取')
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
     parser.add_argument('--vision_range', type=int, default=100)

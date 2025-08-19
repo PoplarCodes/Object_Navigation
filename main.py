@@ -102,10 +102,9 @@ def main():
     # 4. Past Agent Locations
     # 5,6,7,.. : Semantic Categories
     nc = args.num_sem_categories + 4  # num channels
-    # 房间语义通道在 local_map 中的起始偏移（跳过15个物体+背景）
-    room_sem_offset = len(coco_categories) + 1
-
     # Calculating full and local map sizes
+    # 房间语义通道起始偏移 = 15个物体 + 1个背景
+    room_sem_offset = NUM_OBJECT_CATEGORIES + 1
     map_size = args.map_size_cm // args.map_resolution
     full_w, full_h = map_size, map_size
     local_w = int(full_w / args.global_downscaling)
@@ -225,7 +224,8 @@ def main():
 
     # 定义全局策略的观测空间
     # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
-    ngc = 8 + args.num_sem_categories  # 通道数 num_sem_categories = 16
+    # 地图通道数 = 基础8通道 + 语义通道数（物体 + 房间）
+    ngc = 8 + args.num_sem_categories
     es = 2
     g_observation_space = gym.spaces.Box(0, 1,
                                          (ngc,
@@ -344,9 +344,8 @@ def main():
                     room_idx = int(room)
                 if room_idx is None:
                     continue  # 找不到映射时跳过
-                # cn = room_idx + 4
-                # 房间通道索引需避开物体通道，因此加上物体类别数偏移
-                cn = room_idx + NUM_OBJECT_CATEGORIES + 4
+                # 房间通道索引需避开物体通道和背景通道，故需加上物体类别数+1的偏移
+                cn = room_idx + NUM_OBJECT_CATEGORIES + 1 + 4
 
                 if cn < local_map.shape[1]:
                     room_mask = local_map[e, cn, :, :].cpu().numpy()
@@ -568,9 +567,8 @@ def main():
                         room_idx = int(room)
                     if room_idx is None:
                         continue
-                    # cn = room_idx + 4  # 语义图中房间类别通道
-                    # 房间通道索引加上物体类别数偏移，避免与物体通道冲突
-                    cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 语义图中房间类别通道
+                    # 房间语义通道 = 4个基础通道 + 15个物体通道 + 背景通道
+                    cn = room_idx + NUM_OBJECT_CATEGORIES + 1 + 4  # 语义图中房间类别通道
                     if cn < local_map.shape[1]:
                         room_mask = local_map[e, cn, :, :].cpu().numpy()
                         room_goal_map[room_mask > 0] = 1

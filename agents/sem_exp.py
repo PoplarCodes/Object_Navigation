@@ -9,7 +9,7 @@ import torch
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
-from constants import color_palette
+from constants import color_palette, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
 
@@ -129,7 +129,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             obs, rew, done, info = super().step(action)
 
             # preprocess obs
-            obs = self._preprocess_obs(obs) 
+            obs = self._preprocess_obs(obs)
             self.last_action = action['action']
             self.obs = obs
             self.info = info
@@ -164,8 +164,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         # Get Map prediction
         map_pred = np.rint(planner_inputs['map_pred'])
-        goal = planner_inputs['goal']
-
+        goal = planner_inputs['goal']  # 目标地图可能来自全局策略或房间先验
         # Get pose prediction and global policy planning window
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = \
             planner_inputs['pose_pred']
@@ -337,7 +336,9 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             semantic_pred, self.rgb_vis = self.sem_pred.get_prediction(rgb)
             semantic_pred = semantic_pred.astype(np.float32)
         else:
-            semantic_pred = np.zeros((rgb.shape[0], rgb.shape[1], 16))
+            # 未启用分割时构造全零语义图，通道数 = 物体15类 + 背景 + 房间N类
+            sem_channels = NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES
+            semantic_pred = np.zeros((rgb.shape[0], rgb.shape[1], sem_channels))
             self.rgb_vis = rgb[:, :, ::-1]
         return semantic_pred
 
