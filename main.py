@@ -14,6 +14,7 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
+from constants import room_channel_map  # 房间名称与通道索引映射
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -334,7 +335,15 @@ def main():
             # 将每个目标房间在语义图上投射为掩码
             room_goal_map = np.zeros((local_w, local_h))
             for room in infos[e]['goal_rooms']:
-                cn = room + 4  # 语义图中对应房间类别的通道
+                # 兼容房间名称或编号：先映射为索引，再加上偏移量得到语义图通道
+                if isinstance(room, str):
+                    room_idx = room_channel_map.get(room)
+                else:
+                    room_idx = int(room)
+                if room_idx is None:
+                    continue  # 找不到映射时跳过
+                cn = room_idx + 4
+
                 if cn < local_map.shape[1]:
                     room_mask = local_map[e, cn, :, :].cpu().numpy()
                     room_goal_map[room_mask > 0] = 1
@@ -548,7 +557,14 @@ def main():
             if 'goal_rooms' in infos[e]:
                 room_goal_map = np.zeros((local_w, local_h))
                 for room in infos[e]['goal_rooms']:
-                    cn = room + 4  # 语义图中房间类别通道
+                    # 同样处理房间名称或编号，获取语义图通道索引
+                    if isinstance(room, str):
+                        room_idx = room_channel_map.get(room)
+                    else:
+                        room_idx = int(room)
+                    if room_idx is None:
+                        continue
+                    cn = room_idx + 4  # 语义图中房间类别通道
                     if cn < local_map.shape[1]:
                         room_mask = local_map[e, cn, :, :].cpu().numpy()
                         room_goal_map[room_mask > 0] = 1

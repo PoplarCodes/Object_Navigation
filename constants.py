@@ -66,6 +66,18 @@ object_room_map = {
 }
 # 使用方式：通过 object_room_map["bed"] 获取 ["bedroom"] 等房间列表
 
+# 房间名称到语义图通道索引的映射，便于将房间先验投射到语义图上
+room_channel_map = {
+    "living room": 0,
+    "dining room": 1,
+    "study": 2,
+    "bedroom": 3,
+    "bathroom": 4,
+    "kitchen": 5,
+    "office": 6,
+    "balcony": 7,
+}
+
 coco_categories_mapping = {
     56: 0,  # chair
     57: 1,  # couch
