@@ -14,7 +14,7 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
-from constants import room_channel_map, NUM_OBJECT_CATEGORIES  # 房间名称与通道索引映射及物体类别数
+from constants import room_channel_map, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES  # 房间名称与通道索引映射及物体/房间类别数
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -103,8 +103,8 @@ def main():
     # 5,6,7,.. : Semantic Categories
     nc = args.num_sem_categories + 4  # num channels
     # Calculating full and local map sizes
-    # 房间语义通道起始偏移 = 15个物体 + 1个背景
-    room_sem_offset = NUM_OBJECT_CATEGORIES + 1
+    # 房间语义通道起始偏移 = 15个物体通道
+    room_sem_offset = NUM_OBJECT_CATEGORIES
     map_size = args.map_size_cm // args.map_resolution
     full_w, full_h = map_size, map_size
     local_w = int(full_w / args.global_downscaling)
@@ -345,7 +345,7 @@ def main():
                 if room_idx is None:
                     continue  # 找不到映射时跳过
                 # 房间通道索引需避开物体通道和背景通道，故需加上物体类别数+1的偏移
-                cn = room_idx + NUM_OBJECT_CATEGORIES + 1 + 4
+                cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 房间通道位于物体通道之后，背景通道放在所有房间通道之后
 
                 if cn < local_map.shape[1]:
                     room_mask = local_map[e, cn, :, :].cpu().numpy()
@@ -371,10 +371,11 @@ def main():
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
-            background_ch = 4 + NUM_OBJECT_CATEGORIES  # 前4层是地图特征，背景通道在物体语义通道之后
-            # 显式指定背景通道索引，如后续增加新的语义通道需同步更新该索引
-            local_map[e, background_ch, :, :] = 1e-5
-            p_input['sem_map_pred'] = local_map[e, 4:, :, :
+            # 计算背景通道索引：4个基础通道 + 物体通道数 + 房间通道数
+            background_ch = 4 + NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES
+            local_map[e, background_ch, :, :] = 1e-5  # 为背景通道赋予极小值，避免 argmax 取到无效通道
+            sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1  # 物体 + 房间 + 背景
+            p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :
                                       ].argmax(0).cpu().numpy()
 
     obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
@@ -569,8 +570,8 @@ def main():
                         room_idx = int(room)
                     if room_idx is None:
                         continue
-                    # 房间语义通道 = 4个基础通道 + 15个物体通道 + 背景通道
-                    cn = room_idx + NUM_OBJECT_CATEGORIES + 1 + 4  # 语义图中房间类别通道
+                    # 房间语义通道 = 4个基础通道 + 物体通道数
+                    cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 背景通道位于所有房间通道之后
                     if cn < local_map.shape[1]:
                         room_mask = local_map[e, cn, :, :].cpu().numpy()
                         room_goal_map[room_mask > 0] = 1
@@ -603,10 +604,11 @@ def main():
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:
-                local_map[e, -1, :, :] = 1e-5
-                p_input['sem_map_pred'] = local_map[e, 4:, :,
-                                          #:].argmax(0).cpu().numpy()
-                                          :].argmax(0).cpu().numpy()
+                # 计算背景通道索引：4个基础通道 + 物体通道数 + 房间通道数
+                background_ch = 4 + NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES
+                local_map[e, background_ch, :, :] = 1e-5  # 为背景通道赋予极小值，防止 argmax 选到无效通道
+                sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
+                p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :].argmax(0).cpu().numpy()
 
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
