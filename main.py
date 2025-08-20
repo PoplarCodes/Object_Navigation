@@ -344,8 +344,9 @@ def main():
                     room_idx = int(room)
                 if room_idx is None:
                     continue  # 找不到映射时跳过
-                # 房间通道索引需避开物体通道和背景通道，故需加上物体类别数+1的偏移
-                cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 房间通道位于物体通道之后，背景通道放在所有房间通道之后
+                # 语义通道排列为：前4个基础通道 -> 物体通道 -> 背景通道 -> 房间通道
+                # 因此房间通道索引需避开前述所有通道，需加上物体数与1个背景通道
+                cn = room_idx + NUM_OBJECT_CATEGORIES + 5  # +4为基础通道，+1为背景通道
 
                 if cn < local_map.shape[1]:
                     room_mask = local_map[e, cn, :, :].cpu().numpy()
@@ -573,8 +574,9 @@ def main():
                         room_idx = int(room)
                     if room_idx is None:
                         continue
-                    # 房间语义通道 = 4个基础通道 + 物体通道数
-                    cn = room_idx + NUM_OBJECT_CATEGORIES + 4  # 背景通道位于所有房间通道之后
+                    # 语义图中通道顺序：4个基础通道 + 物体通道 + 背景通道 + 房间通道
+                    # 因此取房间通道时需跳过物体通道和1个背景通道
+                    cn = room_idx + NUM_OBJECT_CATEGORIES + 5  # +4基础通道，+1背景通道
                     if cn < local_map.shape[1]:
                         room_mask = local_map[e, cn, :, :].cpu().numpy()
                         room_goal_map[room_mask > 0] = 1
