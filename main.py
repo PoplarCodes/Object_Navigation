@@ -371,10 +371,12 @@ def main():
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
-            # 计算背景通道索引：4个基础通道 + 物体通道数 + 房间通道数
-            background_ch = 4 + NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES
-            local_map[e, background_ch, :, :] = 1e-5  # 为背景通道赋予极小值，避免 argmax 取到无效通道
-            sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1  # 物体 + 房间 + 背景
+            # 计算背景通道索引：4 个基础通道 + 物体通道数
+            background_ch = 4 + NUM_OBJECT_CATEGORIES
+            # 为背景通道赋予极小值，避免 argmax 取到无效通道
+            local_map[e, background_ch, :, :] = 1e-5
+            # 语义通道总数：物体 + 房间 + 背景
+            sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
             p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :
                                       ].argmax(0).cpu().numpy()
 
@@ -604,12 +606,12 @@ def main():
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:
-                # 计算背景通道索引：4个基础通道 + 物体通道数 + 房间通道数
-                background_ch = 4 + NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES
-                local_map[e, background_ch, :, :] = 1e-5  # 为背景通道赋予极小值，防止 argmax 选到无效通道
+                # 计算背景通道索引：4 个基础通道 + 物体通道数
+                background_ch = 4 + NUM_OBJECT_CATEGORIES
+                # 为背景通道赋予极小值，防止 argmax 选到无效通道
+                local_map[e, background_ch, :, :] = 1e-5
                 sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
                 p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :].argmax(0).cpu().numpy()
-
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
 

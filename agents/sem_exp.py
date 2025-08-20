@@ -357,7 +357,12 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
 
         goal = inputs['goal']
-        sem_map = inputs['sem_map_pred'].copy()  # 复制语义图，避免原数据被修改
+        # 若未提供语义预测图，则无法继续可视化，直接返回
+        sem_map_pred = inputs.get('sem_map_pred')
+        if sem_map_pred is None:
+            return
+        sem_map = sem_map_pred.copy()  # 复制语义图，避免原数据被修改
+
 
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
         # 根据代理全局坐标计算其在语义图中的像素位置
@@ -375,9 +380,10 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             room_name = INV_ROOM_CHANNEL_MAP.get(room_idx, "Unknown")
         sem_map += 5
 
-        #no_cat_mask = sem_map == 20
-        background_idx = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5  # 背景通道索引，考虑房间类别
-        no_cat_mask = sem_map == background_idx  # 背景区域掩码
+        # 计算背景通道索引：物体通道数 + 偏移量 5
+        background_idx = NUM_OBJECT_CATEGORIES + 5
+        # 重新生成背景区域掩码
+        no_cat_mask = sem_map == background_idx
         map_mask = np.rint(map_pred) == 1
         exp_mask = np.rint(exp_pred) == 1
         vis_mask = self.visited_vis[gx1:gx2, gy1:gy2] == 1
