@@ -138,6 +138,19 @@ def get_args():
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
 
+    parser.add_argument('--use_room_prior', action='store_true',
+                        help='启用在线房间先验以引导长期目标')
+    parser.add_argument('--door_min_width_m', type=float, default=0.7,
+                        help='门洞最小宽度（米）')
+    parser.add_argument('--door_max_width_m', type=float, default=1.5,
+                        help='门洞最大宽度（米）')
+    parser.add_argument('--min_room_area_m2', type=float, default=2.0,
+                        help='最小房间面积，小于则并回邻居（平方米）')
+    parser.add_argument('--room_vote_temp', type=float, default=1.0,
+                        help='房型 softmax 温度')
+    parser.add_argument('--room_prior_decay', type=float, default=0.0,
+                        help='对已探索充分房间的先验衰减系数 0~1')
+
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
     parser.add_argument('--vision_range', type=int, default=100)
