@@ -138,6 +138,17 @@ def get_args():
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
 
+    # Mapping
+    parser.add_argument('--global_downscaling', type=int, default=2)
+    parser.add_argument('--vision_range', type=int, default=100)
+    parser.add_argument('--map_resolution', type=int, default=5)
+    parser.add_argument('--du_scale', type=int, default=1)
+    parser.add_argument('--map_size_cm', type=int, default=2400)
+    parser.add_argument('--cat_pred_threshold', type=float, default=5.0)
+    parser.add_argument('--map_pred_threshold', type=float, default=1.0)
+    parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
+    parser.add_argument('--collision_threshold', type=float, default=0.20)
+
     parser.add_argument('--use_room_prior', action='store_true',
                         help='启用在线房间先验以引导长期目标')
     parser.add_argument('--door_min_width_m', type=float, default=0.7,
@@ -150,17 +161,9 @@ def get_args():
                         help='房型 softmax 温度')
     parser.add_argument('--room_prior_decay', type=float, default=0.0,
                         help='对已探索充分房间的先验衰减系数 0~1')
-
-    # Mapping
-    parser.add_argument('--global_downscaling', type=int, default=2)
-    parser.add_argument('--vision_range', type=int, default=100)
-    parser.add_argument('--map_resolution', type=int, default=5)
-    parser.add_argument('--du_scale', type=int, default=1)
-    parser.add_argument('--map_size_cm', type=int, default=2400)
-    parser.add_argument('--cat_pred_threshold', type=float, default=5.0)
-    parser.add_argument('--map_pred_threshold', type=float, default=1.0)
-    parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
-    parser.add_argument('--collision_threshold', type=float, default=0.20)
+    parser.add_argument('--default_type_logits', type=float, nargs=7,
+                        default=[0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1],
+                        help='无对象证据时的7维房型默认分布')
 
     #添加参数来指定目标类别
     # parser.add_argument('--target_goal', type=int, default=0,

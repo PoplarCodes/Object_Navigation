@@ -53,6 +53,9 @@ class RoomCfg:
     min_room_area_m2: float = 2.0   # 过小区域并回收
     vote_temp: float = 1.0          # 温度参数（平滑房型 softmax）
     decay_explored_in_prior: float = 0.0  # 为 0~1，>0 时会降低已充分探索房间的先验
+    default_type_logits: Tuple[float, float, float, float, float, float, float] = (
+        0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1
+    )  # 无对象证据时的房型默认分布
 
 
 # 15x7 对象→房型先验权重矩阵（行：对象；列：房型）
@@ -149,9 +152,9 @@ class OnlineRoomInfer:
             if corr_boost > 0:
                 type_logits[5] += 0.2 * corr_boost * type_logits.max()
 
-            # 无证据则给一个平滑先验
+            # 无任何对象证据时，使用预设的默认房型分布作为先验
             if type_logits.sum() <= 0:
-                type_logits += 1e-3
+                type_logits = np.array(self.cfg.default_type_logits, dtype=np.float32)
 
             # softmax
             t = max(self.cfg.vote_temp, 1e-3)
@@ -174,9 +177,9 @@ class OnlineRoomInfer:
         # 保存房型概率供可视化
         if len(self.rooms) > 0:
             type_probs_all = np.stack([r.type_probs for r in self.rooms], axis=0)
-            os.makedirs('tmp', exist_ok=True)
-            np.save(f'tmp/room_probs_env{env_id}_step{step}.npy', type_probs_all)
-            np.save(f'tmp/room_map_env{env_id}_step{step}.npy', self.room_id_map)
+            os.makedirs('tmp/room_map', exist_ok=True)
+            np.save(f'tmp/room_map/room_probs_env{env_id}_step{step}.npy', type_probs_all)
+            np.save(f'tmp/room_map/room_map_env{env_id}_step{step}.npy', self.room_id_map)
 
     def build_goal_prior(self, target_obj_id: int) -> np.ndarray:
         """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化。
@@ -355,5 +358,10 @@ def build_online_room_infer_from_args(args, n_obj_classes: int = 15) -> OnlineRo
         min_room_area_m2=getattr(args, 'min_room_area_m2', 2.0),
         vote_temp=getattr(args, 'room_vote_temp', 1.0),
         decay_explored_in_prior=getattr(args, 'room_prior_decay', 0.0),
+        default_type_logits=tuple(getattr(
+            args,
+            'default_type_logits',
+            [0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1]
+        )),  # 可选指定默认房型分布
     )
     return OnlineRoomInfer(cfg, n_obj_classes=n_obj_classes)
