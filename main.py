@@ -371,14 +371,15 @@ def main():
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
-            # 计算背景通道索引：4 个基础通道 + 物体通道数
-            background_ch = 4 + NUM_OBJECT_CATEGORIES
-            # 为背景通道赋予极小值，避免 argmax 取到无效通道
-            local_map[e, background_ch, :, :] = 1e-5
             # 语义通道总数：物体 + 房间 + 背景
             sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
-            p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :
-                                      ].argmax(0).cpu().numpy()
+            sem_pred = local_map[e, 4:4 + sem_channels, :, :].cpu().numpy()
+            # 先按通道求 argmax 得到每个像素的类别索引
+            sem_map = sem_pred.argmax(0)
+            # 若该像素所有通道均为 0，说明尚未预测到任何语义类别，显式标记为背景索引
+            no_sem_mask = sem_pred.max(0) == 0
+            sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES
+            p_input['sem_map_pred'] = sem_map
 
     obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
 
@@ -606,12 +607,14 @@ def main():
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:
-                # 计算背景通道索引：4 个基础通道 + 物体通道数
-                background_ch = 4 + NUM_OBJECT_CATEGORIES
-                # 为背景通道赋予极小值，防止 argmax 选到无效通道
-                local_map[e, background_ch, :, :] = 1e-5
+                # 语义通道总数：物体 + 房间 + 背景
                 sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
-                p_input['sem_map_pred'] = local_map[e, 4:4 + sem_channels, :, :].argmax(0).cpu().numpy()
+                sem_pred = local_map[e, 4:4 + sem_channels, :, :].cpu().numpy()
+                sem_map = sem_pred.argmax(0)
+                # 对于所有通道值均为 0 的像素，认为其尚未观测到语义，设为背景索引
+                no_sem_mask = sem_pred.max(0) == 0
+                sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES
+                p_input['sem_map_pred'] = sem_map
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
 
