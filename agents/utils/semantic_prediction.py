@@ -5,6 +5,10 @@ import os
 
 import torch
 import numpy as np
+try:
+    import cv2  # 用于图像缩放等操作
+except ImportError:  # 若环境缺少 OpenCV，可提示使用者安装
+    cv2 = None
 from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
 from detectron2.config import get_cfg
 from detectron2.utils.logger import setup_logger
@@ -13,15 +17,19 @@ from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 import detectron2.data.transforms as T
+import cv2  # 读取和处理房间掩码图像
 
-
-# 引入常量：COCO类别映射、小物体索引、房间类别数量以及物体类别数量
+# 引入常量：COCO类别映射、小物体索引、房间与物体类别数量，以及物体与房间的先验对应
 from constants import (
     coco_categories_mapping,
     small_object_indices,
     NUM_ROOM_CATEGORIES,
     NUM_OBJECT_CATEGORIES,
+    object_room_map,
+    room_channel_map,
+    coco_categories,
 )
+
 
 class SemanticPredMaskRCNN():
 
@@ -84,14 +92,16 @@ class SemanticPredMaskRCNN():
         for idx, (_, mask) in best_masks.items():
             semantic_input[:, :, idx] = mask.cpu().numpy()
 
-        # 读取或生成房间分割结果，seg_predictions中未提供时尝试从目录加载或调用模型生成
+        # 读取或生成房间分割结果，若网络未提供则通过自定义方法获取
         room_masks = seg_predictions[0].get('room_masks', None)
         if room_masks is None:
             # 若未提供预测结果，则先尝试从指定目录读取
             room_masks = self._load_room_masks(img)
         if room_masks is None:
-            # 目录中也没有时，可调用内部方法生成（此处为占位实现）
-            room_masks = self._generate_room_masks(img)
+            # # 目录中也没有时，可调用内部方法生成（此处为占位实现）
+            # room_masks = self._generate_room_masks(img)
+            # 目录中也没有时，根据当前检测结果动态生成房间概率图
+            room_masks = self._generate_room_masks(img, best_masks)
         if room_masks is not None:
             # room_masks 维度应为 [房间数, H, W]
             room_masks = self._ensure_room_mask_shape(room_masks, img.shape[:2])
@@ -115,13 +125,45 @@ class SemanticPredMaskRCNN():
             return np.load(mask_path)
         return None
 
-    def _generate_room_masks(self, img):
-        """调用房间分割模型生成掩码，当前为占位实现"""
+    def _generate_room_masks(self, img, best_masks):
+        """根据检测到的物体和先验生成房间概率热图"""
         if img is None:
             return None
-        # 这里简单返回全零掩码，实际应用中应替换为真实的房间分割模型预测
         h, w, _ = img.shape
-        return np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
+        # return np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
+        # 初始化房间热图为均匀分布，每个通道先给一个平滑先验
+        room_heatmap = np.ones((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
+        # coverage 用于统计当前检测到的物体像素占比
+        coverage = np.zeros((h, w), dtype=np.float32)
+        # 构建类别索引到名称的映射，便于查找房间先验
+        idx2name = {v: k for k, v in coco_categories.items()}
+        used_channels = set()
+        for obj_idx, (score, mask) in best_masks.items():
+            mask_np = mask.cpu().numpy()
+            coverage = np.logical_or(coverage, mask_np)
+            obj_name = idx2name.get(obj_idx, None)
+            if obj_name is None:
+                continue
+            rooms = object_room_map.get(obj_name, [])
+            if not rooms:
+                continue
+            # 将物体置信度均分给所有可能房间，并叠加到对应通道
+            per_room_score = score / len(rooms)
+            for room in rooms:
+                r_idx = room_channel_map[room]
+                room_heatmap[r_idx] += mask_np * per_room_score
+                used_channels.add(r_idx)
+        # 计算物体覆盖比例，用作未出现房间的衰减因子
+        explored_ratio = coverage.mean()
+        decay = 1.0 - explored_ratio
+        for r_idx in range(NUM_ROOM_CATEGORIES):
+            if r_idx not in used_channels:
+                room_heatmap[r_idx] *= decay
+        # 对所有房间通道进行归一化，得到每像素的概率分布
+        norm = room_heatmap.sum(axis=0, keepdims=True)
+        norm[norm == 0] = 1.0
+        room_heatmap = room_heatmap / norm
+        return room_heatmap
 
     def _ensure_room_mask_shape(self, room_masks, img_shape):
         """确保房间掩码维度与 NUM_ROOM_CATEGORIES 和图像尺寸一致"""
@@ -137,6 +179,8 @@ class SemanticPredMaskRCNN():
             room_masks = room_masks[:NUM_ROOM_CATEGORIES]
         # 若尺寸不匹配则调整为图像大小
         if room_masks.shape[1] != h or room_masks.shape[2] != w:
+            if cv2 is None:
+                raise ImportError("需要安装 OpenCV 才能调整房间掩码尺寸")
             room_masks = np.array([
                 cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
                 for mask in room_masks
