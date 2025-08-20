@@ -363,17 +363,17 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         sem_map += 5
 
         #no_cat_mask = sem_map == 20
-        background_idx = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5 - 1  # 计算背景索引
+        background_idx = NUM_OBJECT_CATEGORIES + 5  # 背景通道索引，忽略房间类别
         no_cat_mask = sem_map == background_idx  # 背景区域掩码
         map_mask = np.rint(map_pred) == 1
         exp_mask = np.rint(exp_pred) == 1
         vis_mask = self.visited_vis[gx1:gx2, gy1:gy2] == 1
 
         sem_map[no_cat_mask] = 0
-        m1 = np.logical_and(no_cat_mask, exp_mask)
+        m1 = np.logical_and(no_cat_mask, exp_mask)  # 已探索但未知类别的位置
         sem_map[m1] = 2
 
-        m2 = np.logical_and(no_cat_mask, map_mask)
+        m2 = np.logical_and(no_cat_mask, map_mask)  # 已建图但未知类别的位置
         sem_map[m2] = 1
 
         sem_map[vis_mask] = 3
