@@ -30,7 +30,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-
+import os  # 引入 os 以保存房型概率供可视化
 try:
     import cv2  # type: ignore
     _HAS_CV2 = True
@@ -102,6 +102,8 @@ class OnlineRoomInfer:
                traversible: np.ndarray,   # bool/0-1 可行走
                explored: np.ndarray,      # bool/0-1 已探索
                sem_probs: np.ndarray,     # float [15,H,W] 语义概率/置信度
+               env_id: int = 0,  # 环境编号
+               step: int = 0,  # 全局步骤
                explored_ratio_map: Optional[np.ndarray] = None  # 0~1（可缺省）
                ) -> None:
         """基于当前栅格状态与语义置信度，更新房间分割与房型概率。
@@ -168,6 +170,13 @@ class OnlineRoomInfer:
                 obj_hits=obj_hits,
                 explored_ratio=explored_ratio,
             ))
+
+        # 保存房型概率供可视化
+        if len(self.rooms) > 0:
+            type_probs_all = np.stack([r.type_probs for r in self.rooms], axis=0)
+            os.makedirs('tmp', exist_ok=True)
+            np.save(f'tmp/room_probs_env{env_id}_step{step}.npy', type_probs_all)
+            np.save(f'tmp/room_map_env{env_id}_step{step}.npy', self.room_id_map)
 
     def build_goal_prior(self, target_obj_id: int) -> np.ndarray:
         """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化。

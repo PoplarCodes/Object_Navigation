@@ -21,6 +21,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def main():
     args = get_args()
+    os.makedirs('tmp', exist_ok=True)  # 创建 tmp 目录，保存先验热力图以检查房型推理效果
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -312,7 +313,7 @@ def main():
         traversible = (local_map[e, 0].cpu().numpy() == 0)
         explored = (local_map[e, 1].cpu().numpy() > 0)
         sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-        room_infer[e].update(traversible, explored, sem_probs)
+        room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=0)  # 携带环境和步骤编号，保存房型概率供可视化
 
     extras = torch.zeros(num_scenes, 2)
     extras[:, 0] = global_orientation[:, 0]
@@ -351,6 +352,7 @@ def main():
             found_goal[e] = 1
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
+            np.save(f'tmp/room_prior_env{e}_step0.npy', prior)  # 保存先验热力图以检查房型推理效果
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                 gy, gx = np.unravel_index(np.argmax(prior), prior.shape)
                 goal_maps[e][:, :] = 0
@@ -491,7 +493,7 @@ def main():
                 traversible = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-                room_infer[e].update(traversible, explored, sem_probs)
+                room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=g_step)  # 携带环境和步骤编号，保存房型概率供可视化
 
             # Get exploration reward and metrics
             g_reward = torch.from_numpy(np.asarray(
@@ -563,6 +565,7 @@ def main():
                 found_goal[e] = 1
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
+                np.save(f'tmp/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                     gy, gx = np.unravel_index(np.argmax(prior), prior.shape)
                     goal_maps[e][:, :] = 0
