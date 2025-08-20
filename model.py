@@ -206,9 +206,16 @@ class Semantic_Mapping(nn.Module):
         # 先将特征张量清零，并保持第0通道为1表示占据信息
         self.feat.zero_()
         self.feat[:, 0, :] = 1.0
-        # 观测中包含物体与房间语义，对所有语义通道进行平均池化后写入
+        # 观测中包含物体与房间语义，先依据阈值挑选最可信类别后再池化
         obs_sem_channels = c - 4  # 观测语义通道数（物体+房间）
-        pooled_sem = nn.AvgPool2d(self.du_scale)(obs[:, 4:, :, :])
+        sem_input = obs[:, 4:, :, :]
+        # 对每个像素取概率最大的类别
+        sem_score, sem_idx = torch.max(sem_input, dim=1, keepdim=True)
+        sem_onehot = torch.zeros_like(sem_input)
+        sem_onehot.scatter_(1, sem_idx, 1.0)
+        # 低于阈值的像素视为无效语义
+        sem_onehot *= (sem_score >= self.cat_pred_threshold).float()
+        pooled_sem = nn.AvgPool2d(self.du_scale)(sem_onehot)
         self.feat[:, 1:1 + obs_sem_channels, :] = pooled_sem.view(
             bs, obs_sem_channels, h // self.du_scale * w // self.du_scale)
         # 若有未观测到的房间类别，其对应通道保持为0
@@ -252,6 +259,13 @@ class Semantic_Mapping(nn.Module):
         agent_view[:, 4:, y1:y2, x1:x2] = torch.clamp(
             agent_height_proj[:, 1:, :, :] / self.cat_pred_threshold,
             min=0.0, max=1.0)
+        # 再次对写入的语义区域执行阈值与one-hot处理，抑制概率累积误判
+        sem_region = agent_view[:, 4:, y1:y2, x1:x2]
+        region_score, region_idx = torch.max(sem_region, dim=1, keepdim=True)
+        region_onehot = torch.zeros_like(sem_region)
+        region_onehot.scatter_(1, region_idx, 1.0)
+        region_onehot *= (region_score >= 0.5).float()
+        agent_view[:, 4:, y1:y2, x1:x2] = region_onehot
 
         corrected_pose = pose_obs
 

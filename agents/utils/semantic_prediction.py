@@ -131,8 +131,8 @@ class SemanticPredMaskRCNN():
             return None
         h, w, _ = img.shape
         # return np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
-        # 初始化房间热图为均匀分布，每个通道先给一个平滑先验
-        room_heatmap = np.ones((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
+        # 初始化房间热图为0，仅在检测到相关物体时填充对应房间通道
+        room_heatmap = np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
         # coverage 用于统计当前检测到的物体像素占比
         coverage = np.zeros((h, w), dtype=np.float32)
         # 构建类别索引到名称的映射，便于查找房间先验
@@ -163,6 +163,8 @@ class SemanticPredMaskRCNN():
         norm = room_heatmap.sum(axis=0, keepdims=True)
         norm[norm == 0] = 1.0
         room_heatmap = room_heatmap / norm
+        # 将低于0.2的概率视为噪声并置零
+        room_heatmap[room_heatmap < 0.2] = 0
         return room_heatmap
 
     def _ensure_room_mask_shape(self, room_masks, img_shape):
