@@ -138,7 +138,13 @@ color_palette = [
     0.0, 1.0, 1.0,  # 青色，对应房间类别
     1.0, 0.5, 0.0,  # 橙色，对应房间类别
     0.5, 0.0, 0.5,  # 紫色，对应房间类别
+    0.8, 0.8, 0.8,  # 淡灰，用于背景或占位
 ]
-# 运行时检查色板长度是否覆盖所有类别，避免缺色导致显示为黑色
-assert len(color_palette) >= 3 * (5 + NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES), \
+# 计算所需颜色数：5 个基础颜色 + 物体类别 + 房间类别
+required_colors = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5
+# 若色板长度不足，则补齐淡灰色，确保索引 0..n 均有定义
+if len(color_palette) < 3 * required_colors:
+    color_palette.extend([0.8, 0.8, 0.8] * ((3 * required_colors - len(color_palette)) // 3))
+# 最终检查长度，避免由于其他修改导致缺色
+assert len(color_palette) >= 3 * required_colors, \
     "color_palette 长度不足，可能导致某些类别显示为黑色"
