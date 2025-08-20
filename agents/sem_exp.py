@@ -9,7 +9,8 @@ import torch
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
-from constants import color_palette, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES
+from constants import color_palette, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES, room_channel_map  # 引入房间通道映射
+INV_ROOM_CHANNEL_MAP = {v: k for k, v in room_channel_map.items()}  # 反向映射：通道索引 -> 房间名称
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
 
@@ -356,10 +357,22 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
 
         goal = inputs['goal']
-        sem_map = inputs['sem_map_pred']
+        sem_map = inputs['sem_map_pred'].copy()  # 复制语义图，避免原数据被修改
 
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
+        # 根据代理全局坐标计算其在语义图中的像素位置
+        agent_r = int(start_y * 100. / args.map_resolution)
+        agent_c = int(start_x * 100. / args.map_resolution)
+        agent_r = np.clip(agent_r, 0, sem_map.shape[0] - 1)
+        agent_c = np.clip(agent_c, 0, sem_map.shape[1] - 1)
 
+        # 读取该位置的通道索引并反查房间名称
+        agent_sem_id = sem_map[agent_r, agent_c]
+        room_name = "Unknown"
+        room_offset = NUM_OBJECT_CATEGORIES  # 房间类别在语义图中的起始偏移
+        if room_offset <= agent_sem_id < room_offset + NUM_ROOM_CATEGORIES:
+            room_idx = agent_sem_id - room_offset
+            room_name = INV_ROOM_CHANNEL_MAP.get(room_idx, "Unknown")
         sem_map += 5
 
         #no_cat_mask = sem_map == 20
@@ -412,6 +425,19 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                  int(color_palette[10] * 255),
                  int(color_palette[9] * 255))
         cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
+
+        # 在左上角写入当前房间名称
+        text_color = (20, 20, 20)  # BGR，与初始化函数保持一致
+        cv2.putText(
+            self.vis_image,
+            f"Room: {room_name}",
+            (15, 45),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            text_color,
+            2,
+            cv2.LINE_AA,
+        )
 
         if args.visualize:
             # Displaying the image
