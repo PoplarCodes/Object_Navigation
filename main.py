@@ -371,7 +371,9 @@ def main():
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
-            local_map[e, -1, :, :] = 1e-5
+            background_ch = 4 + NUM_OBJECT_CATEGORIES  # 前4层是地图特征，背景通道在物体语义通道之后
+            # 显式指定背景通道索引，如后续增加新的语义通道需同步更新该索引
+            local_map[e, background_ch, :, :] = 1e-5
             p_input['sem_map_pred'] = local_map[e, 4:, :, :
                                       ].argmax(0).cpu().numpy()
 
