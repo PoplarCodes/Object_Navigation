@@ -3,6 +3,7 @@ import re
 
 from torch import optim
 
+
 def get_optimizer(parameters, s):
     """
     Parse optimizer parameters.

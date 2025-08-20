@@ -34,7 +34,7 @@ def init_vis_image(goal_name, legend):
     text = "Observations (Goal: {})".format(goal_name)
     textsize = cv2.getTextSize(text, font, fontScale, thickness)[0]
     textX = (640 - textsize[0]) // 2 + 15
-    textY = 25  # 将标题上移，为下方显示房间类型预留空间
+    textY = (50 + textsize[1]) // 2
     vis_image = cv2.putText(vis_image, text, (textX, textY),
                             font, fontScale, color, thickness,
                             cv2.LINE_AA)
@@ -42,7 +42,7 @@ def init_vis_image(goal_name, legend):
     text = "Predicted Semantic Map"
     textsize = cv2.getTextSize(text, font, fontScale, thickness)[0]
     textX = 640 + (480 - textsize[0]) // 2 + 30
-    textY = 25  # 同样上移保持对齐
+    textY = (50 + textsize[1]) // 2
     vis_image = cv2.putText(vis_image, text, (textX, textY),
                             font, fontScale, color, thickness,
                             cv2.LINE_AA)

@@ -64,51 +64,6 @@ coco_categories_mapping = {
     39: 14,  # bottle
 }
 
-# 物体与可能房间的先验映射，用于根据目标物体推测其可能存在的房间
-object_room_map = {
-    "chair": ["living room", "dining room", "study", "bedroom"],
-    "couch": ["living room"],
-    "potted plant": ["living room", "office"],
-    "bed": ["bedroom"],
-    "toilet": ["bathroom"],
-    "tv": ["living room", "bedroom"],
-    "dining-table": ["dining room", "kitchen"],
-    "oven": ["kitchen"],
-    "sink": ["kitchen", "bathroom"],
-    "refrigerator": ["kitchen"],
-    "book": ["study", "living room"],
-    "clock": ["living room", "bedroom", "kitchen"],
-    "vase": ["living room", "dining room"],
-    "cup": ["kitchen", "dining room"],
-    "bottle": ["kitchen", "dining room"],
-}
-# 使用方式：通过 object_room_map["bed"] 获取 ["bedroom"] 等房间列表
-
-# 房间名称到语义图通道索引的映射，便于将房间先验投射到语义图上
-room_channel_map = {
-    "living room": 0,
-    "dining room": 1,
-    "study": 2,
-    "bedroom": 3,
-    "bathroom": 4,
-    "kitchen": 5,
-    "office": 6,
-    "balcony": 7,
-}
-
-# 物体和房间类别数量，便于统一引用
-# 物体类别总数
-NUM_OBJECT_CATEGORIES = len(coco_categories)
-# 房间类别总数
-NUM_ROOM_CATEGORIES = len(room_channel_map)
-
-# 需要限制最大掩码面积的小物体类别索引
-small_object_indices = {
-    coco_categories["chair"],
-    coco_categories["potted plant"],
-}
-
-
 color_palette = [
     1.0, 1.0, 1.0,
     0.6, 0.6, 0.6,
@@ -129,22 +84,4 @@ color_palette = [
     0.8168, 0.66, 0.9400000000000001,
     0.9218, 0.66, 0.9400000000000001,
     0.9400000000000001, 0.66, 0.8531999999999998,
-    0.9400000000000001, 0.66, 0.748199999999999,
-    1.0, 0.0, 0.0,  # 鲜红，对应房间类别
-    0.0, 1.0, 0.0,  # 鲜绿，对应房间类别
-    0.0, 0.0, 1.0,  # 鲜蓝，对应房间类别
-    1.0, 1.0, 0.0,  # 亮黄，对应房间类别
-    1.0, 0.0, 1.0,  # 品红，对应房间类别
-    0.0, 1.0, 1.0,  # 青色，对应房间类别
-    1.0, 0.5, 0.0,  # 橙色，对应房间类别
-    0.5, 0.0, 0.5,  # 紫色，对应房间类别
-    0.8, 0.8, 0.8,  # 淡灰，用于背景或占位
-]
-# 计算所需颜色数：5 个基础颜色 + 物体类别 + 房间类别
-required_colors = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5
-# 若色板长度不足，则补齐淡灰色，确保索引 0..n 均有定义
-if len(color_palette) < 3 * required_colors:
-    color_palette.extend([0.8, 0.8, 0.8] * ((3 * required_colors - len(color_palette)) // 3))
-# 最终检查长度，避免由于其他修改导致缺色
-assert len(color_palette) >= 3 * required_colors, \
-    "color_palette 长度不足，可能导致某些类别显示为黑色"
+    0.9400000000000001, 0.66, 0.748199999999999]

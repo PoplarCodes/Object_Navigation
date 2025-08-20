@@ -54,6 +54,7 @@ class ChannelPool(nn.MaxPool1d):
         return pooled.view(n, c, w, h)
 
 
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/utils.py#L32
 class AddBias(nn.Module):
     def __init__(self, bias):
         super(AddBias, self).__init__()
@@ -67,11 +68,14 @@ class AddBias(nn.Module):
 
         return x + bias
 
+
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L10
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
 
 
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L82
 class NNBase(nn.Module):
 
     def __init__(self, recurrent, recurrent_input_size, hidden_size):

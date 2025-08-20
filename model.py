@@ -6,14 +6,12 @@ import numpy as np
 from utils.distributions import Categorical, DiagGaussian
 from utils.model import get_grid, ChannelPool, Flatten, NNBase
 import envs.utils.depth_utils as du
-from constants import NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES
+
 
 class Goal_Oriented_Semantic_Policy(NNBase):
 
     def __init__(self, input_shape, recurrent=False, hidden_size=512,
-                 #num_sem_categories=16):
-                 # num_sem_categories = 物体与房间类别总数
-                 num_sem_categories=NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES):
+                 num_sem_categories=16):
         super(Goal_Oriented_Semantic_Policy, self).__init__(
             recurrent, hidden_size, hidden_size)
 
@@ -203,22 +201,9 @@ class Semantic_Mapping(nn.Module):
         XYZ_cm_std[..., 2] = XYZ_cm_std[..., 2] / z_resolution
         XYZ_cm_std[..., 2] = (XYZ_cm_std[..., 2] -
                               (max_h + min_h) // 2.) / (max_h - min_h) * 2.
-        # 先将特征张量清零，并保持第0通道为1表示占据信息
-        self.feat.zero_()
-        self.feat[:, 0, :] = 1.0
-        # 观测中包含物体与房间语义，先依据阈值挑选最可信类别后再池化
-        obs_sem_channels = c - 4  # 观测语义通道数（物体+房间）
-        sem_input = obs[:, 4:, :, :]
-        # 对每个像素取概率最大的类别
-        sem_score, sem_idx = torch.max(sem_input, dim=1, keepdim=True)
-        sem_onehot = torch.zeros_like(sem_input)
-        sem_onehot.scatter_(1, sem_idx, 1.0)
-        # 低于阈值的像素视为无效语义
-        sem_onehot *= (sem_score >= self.cat_pred_threshold).float()
-        pooled_sem = nn.AvgPool2d(self.du_scale)(sem_onehot)
-        self.feat[:, 1:1 + obs_sem_channels, :] = pooled_sem.view(
-            bs, obs_sem_channels, h // self.du_scale * w // self.du_scale)
-        # 若有未观测到的房间类别，其对应通道保持为0
+        self.feat[:, 1:, :] = nn.AvgPool2d(self.du_scale)(
+            obs[:, 4:, :, :]
+        ).view(bs, c - 4, h // self.du_scale * w // self.du_scale)
 
         XYZ_cm_std = XYZ_cm_std.permute(0, 3, 1, 2)
         XYZ_cm_std = XYZ_cm_std.view(XYZ_cm_std.shape[0],
@@ -243,12 +228,10 @@ class Semantic_Mapping(nn.Module):
 
         pose_pred = poses_last
 
-        # agent_view 包含基础4通道 + 物体与房间语义通道
-        agent_view = torch.zeros(
-            bs, 4 + self.num_sem_categories,
-            self.map_size_cm // self.resolution,
-            self.map_size_cm // self.resolution
-        ).to(self.device)
+        agent_view = torch.zeros(bs, c,
+                                 self.map_size_cm // self.resolution,
+                                 self.map_size_cm // self.resolution
+                                 ).to(self.device)
 
         x1 = self.map_size_cm // (self.resolution * 2) - self.vision_range // 2
         x2 = x1 + self.vision_range
@@ -259,13 +242,6 @@ class Semantic_Mapping(nn.Module):
         agent_view[:, 4:, y1:y2, x1:x2] = torch.clamp(
             agent_height_proj[:, 1:, :, :] / self.cat_pred_threshold,
             min=0.0, max=1.0)
-        # 再次对写入的语义区域执行阈值与one-hot处理，抑制概率累积误判
-        sem_region = agent_view[:, 4:, y1:y2, x1:x2]
-        region_score, region_idx = torch.max(sem_region, dim=1, keepdim=True)
-        region_onehot = torch.zeros_like(sem_region)
-        region_onehot.scatter_(1, region_idx, 1.0)
-        region_onehot *= (region_score >= 0.5).float()
-        agent_view[:, 4:, y1:y2, x1:x2] = region_onehot
 
         corrected_pose = pose_obs
 

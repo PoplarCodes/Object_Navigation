@@ -9,8 +9,7 @@ import torch
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
-from constants import color_palette, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES, room_channel_map  # 引入房间通道映射
-INV_ROOM_CHANNEL_MAP = {v: k for k, v in room_channel_map.items()}  # 反向映射：通道索引 -> 房间名称
+from constants import color_palette
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
 
@@ -130,7 +129,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             obs, rew, done, info = super().step(action)
 
             # preprocess obs
-            obs = self._preprocess_obs(obs)
+            obs = self._preprocess_obs(obs) 
             self.last_action = action['action']
             self.obs = obs
             self.info = info
@@ -165,7 +164,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         # Get Map prediction
         map_pred = np.rint(planner_inputs['map_pred'])
-        goal = planner_inputs['goal']  # 目标地图可能来自全局策略或房间先验
+        goal = planner_inputs['goal']
+
         # Get pose prediction and global policy planning window
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = \
             planner_inputs['pose_pred']
@@ -337,9 +337,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             semantic_pred, self.rgb_vis = self.sem_pred.get_prediction(rgb)
             semantic_pred = semantic_pred.astype(np.float32)
         else:
-            # 未启用分割时构造全零语义图，通道数 = 物体15类 + 背景 + 房间N类
-            sem_channels = NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES
-            semantic_pred = np.zeros((rgb.shape[0], rgb.shape[1], sem_channels))
+            semantic_pred = np.zeros((rgb.shape[0], rgb.shape[1], 16))
             self.rgb_vis = rgb[:, :, ::-1]
         return semantic_pred
 
@@ -357,43 +355,22 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
 
         goal = inputs['goal']
-        # 若未提供语义预测图，则无法继续可视化，直接返回
-        sem_map_pred = inputs.get('sem_map_pred')
-        if sem_map_pred is None:
-            return
-        sem_map = sem_map_pred.copy()  # 复制语义图，避免原数据被修改
-
+        sem_map = inputs['sem_map_pred']
 
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
-        # 根据代理全局坐标计算其在语义图中的像素位置
-        agent_r = int(start_y * 100. / args.map_resolution)
-        agent_c = int(start_x * 100. / args.map_resolution)
-        agent_r = np.clip(agent_r, 0, sem_map.shape[0] - 1)
-        agent_c = np.clip(agent_c, 0, sem_map.shape[1] - 1)
 
-        # 读取该位置的通道索引并反查房间名称
-        agent_sem_id = sem_map[agent_r, agent_c]
-        room_name = "Unknown"
-        room_offset = NUM_OBJECT_CATEGORIES + 1  # 房间类别在语义图中的起始偏移，需跳过背景通道后再映射房间类别
-        if room_offset <= agent_sem_id < room_offset + NUM_ROOM_CATEGORIES:
-            room_idx = agent_sem_id - room_offset
-            room_name = INV_ROOM_CHANNEL_MAP.get(room_idx, "Unknown")
         sem_map += 5
 
-        # 计算背景通道索引：物体通道数 + 房间类别数 + 偏移量 5
-        # 增加 NUM_ROOM_CATEGORIES 是为了在语义图中正确跳过所有房间类别
-        background_idx = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5
-        # 重新生成背景区域掩码
-        no_cat_mask = sem_map == background_idx
+        no_cat_mask = sem_map == 20
         map_mask = np.rint(map_pred) == 1
         exp_mask = np.rint(exp_pred) == 1
         vis_mask = self.visited_vis[gx1:gx2, gy1:gy2] == 1
 
-        sem_map[no_cat_mask] = background_idx  # 未预测到类别的像素置为背景索引，显示为淡灰
-        m1 = np.logical_and(no_cat_mask, exp_mask)  # 已探索但未知类别的位置
+        sem_map[no_cat_mask] = 0
+        m1 = np.logical_and(no_cat_mask, exp_mask)
         sem_map[m1] = 2
 
-        m2 = np.logical_and(no_cat_mask, map_mask)  # 已建图但未知类别的位置
+        m2 = np.logical_and(no_cat_mask, map_mask)
         sem_map[m2] = 1
 
         sem_map[vis_mask] = 3
@@ -432,19 +409,6 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                  int(color_palette[10] * 255),
                  int(color_palette[9] * 255))
         cv2.drawContours(self.vis_image, [agent_arrow], 0, color, -1)
-
-        # 在左上角写入当前房间名称
-        text_color = (20, 20, 20)  # BGR，与初始化函数保持一致
-        cv2.putText(
-            self.vis_image,
-            f"Room: {room_name}",
-            (15, 45),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            text_color,
-            2,
-            cv2.LINE_AA,
-        )
 
         if args.visualize:
             # Displaying the image

@@ -14,8 +14,6 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
-from constants import room_channel_map, NUM_OBJECT_CATEGORIES, NUM_ROOM_CATEGORIES  # 房间名称与通道索引映射及物体/房间类别数
-
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
@@ -45,15 +43,15 @@ def main():
     logging.info(args)
 
     # Logging and loss variables
-    num_scenes = args.num_processes  # 并行场景的数量
+    num_scenes = args.num_processes     #并行场景的数量
     num_episodes = int(args.num_eval_episodes)
     device = args.device = torch.device("cuda:0" if args.cuda else "cpu")
 
-    g_masks = torch.ones(num_scenes).float().to(device)  # 全 1 的张量，用于记录每个场景的掩码信息
+    g_masks = torch.ones(num_scenes).float().to(device)    #全 1 的张量，用于记录每个场景的掩码信息
 
     best_g_reward = -np.inf
 
-    # 为1表示处于评估模式
+    #为1表示处于评估模式
     if args.eval:
         episode_success = []
         episode_spl = []
@@ -63,13 +61,13 @@ def main():
             episode_spl.append(deque(maxlen=num_episodes))
             episode_dist.append(deque(maxlen=num_episodes))
 
-    # false 0为训练模式
+    #false 0为训练模式
     else:
         episode_success = deque(maxlen=1000)
         episode_spl = deque(maxlen=1000)
         episode_dist = deque(maxlen=1000)
 
-    # 进程完成状态
+    #进程完成状态
     finished = np.zeros((args.num_processes))
     wait_env = np.zeros((args.num_processes))
 
@@ -102,9 +100,8 @@ def main():
     # 4. Past Agent Locations
     # 5,6,7,.. : Semantic Categories
     nc = args.num_sem_categories + 4  # num channels
+
     # Calculating full and local map sizes
-    # 房间语义通道起始偏移 = 15个物体通道
-    room_sem_offset = NUM_OBJECT_CATEGORIES
     map_size = args.map_size_cm // args.map_resolution
     full_w, full_h = map_size, map_size
     local_w = int(full_w / args.global_downscaling)
@@ -130,7 +127,7 @@ def main():
     # 4-7 store local map boundaries
     planner_pose_inputs = np.zeros((num_scenes, 7))
 
-    # 计算局部地图边界
+    #计算局部地图边界
     def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
         loc_r, loc_c = agent_loc
         local_w, local_h = local_sizes
@@ -153,16 +150,16 @@ def main():
 
         return [gx1, gx2, gy1, gy2]
 
-    # 初始化完整地图和完整姿态
+    #初始化完整地图和完整姿态
     def init_map_and_pose():
         full_map.fill_(0.)
         full_pose.fill_(0.)
-        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  # 智能体初始位置为地图的中心
+        full_pose[:, :2] = args.map_size_cm / 100.0 / 2.0  #智能体初始位置为地图的中心
 
         locs = full_pose.cpu().numpy()
-        planner_pose_inputs[:, :3] = locs  # 将智能体的完整姿态信息的前三维（x,y,朝向）给规划器的输入信息
+        planner_pose_inputs[:, :3] = locs  #将智能体的完整姿态信息的前三维（x,y,朝向）给规划器的输入信息
         for e in range(num_scenes):
-            r, c = locs[e, 1], locs[e, 0]  # 提取当前场景中智能体的xy
+            r, c = locs[e, 1], locs[e, 0]  #提取当前场景中智能体的xy
             loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
                             int(c * 100.0 / args.map_resolution)]
 
@@ -178,10 +175,10 @@ def main():
 
         for e in range(num_scenes):
             local_map[e] = full_map[e, :,
-                           lmb[e, 0]:lmb[e, 1],
-                           lmb[e, 2]:lmb[e, 3]]
+                                    lmb[e, 0]:lmb[e, 1],
+                                    lmb[e, 2]:lmb[e, 3]]
             local_pose[e] = full_pose[e] - \
-                            torch.from_numpy(origins[e]).to(device).float()
+                torch.from_numpy(origins[e]).to(device).float()
 
     def init_map_and_pose_for_env(e):
         full_map[e].fill_(0.)
@@ -206,26 +203,25 @@ def main():
 
         local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
         local_pose[e] = full_pose[e] - \
-                        torch.from_numpy(origins[e]).to(device).float()
+            torch.from_numpy(origins[e]).to(device).float()
 
-    # 更新内在奖励
+    #更新内在奖励
     def update_intrinsic_rew(e):
-        prev_explored_area = full_map[e, 1].sum(1).sum(0)  # 计算之前探索的区域面积，网格数
+        prev_explored_area = full_map[e, 1].sum(1).sum(0)  #计算之前探索的区域面积，网格数
         full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
-            local_map[e]  # 环境的局部地图更新到完整地图对应的局部区域，以反映智能体在局部区域的最新探索情况
-        curr_explored_area = full_map[e, 1].sum(1).sum(0)  # 当前探索的区域总网格数
+            local_map[e] #环境的局部地图更新到完整地图对应的局部区域，以反映智能体在局部区域的最新探索情况
+        curr_explored_area = full_map[e, 1].sum(1).sum(0)  #当前探索的区域总网格数
 
-        # 内在奖励定义为当前探索区域面积减去之前探索的区域面积
+        #内在奖励定义为当前探索区域面积减去之前探索的区域面积
         intrinsic_rews[e] = curr_explored_area - prev_explored_area
-        intrinsic_rews[e] *= (args.map_resolution / 100.) ** 2  # to m^2  内在奖励从网格数转换为实际的面积
+        intrinsic_rews[e] *= (args.map_resolution / 100.)**2  # to m^2  内在奖励从网格数转换为实际的面积
 
-    # 调用函数初始化
+    #调用函数初始化
     init_map_and_pose()
 
     # 定义全局策略的观测空间
-    # 智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
-    # 地图通道数 = 基础8通道 + 语义通道数（物体 + 房间）
-    ngc = 8 + args.num_sem_categories
+    #智能体在与环境交互时，会从这个观测空间中获取信息，以便做出决策
+    ngc = 8 + args.num_sem_categories  #通道数 num_sem_categories = 16
     es = 2
     g_observation_space = gym.spaces.Box(0, 1,
                                          (ngc,
@@ -237,11 +233,11 @@ def main():
                                     shape=(2,), dtype=np.float32)
 
     # 设置全局策略中循环层的隐藏层大小
-    g_hidden_size = args.global_hidden_size  # global_hidden_size = 256
+    g_hidden_size = args.global_hidden_size  #global_hidden_size = 256
 
     # 初始化语义地图模块
     sem_map_module = Semantic_Mapping(args).to(device)
-    sem_map_module.eval()  # 设置为评估模式
+    sem_map_module.eval()  #设置为评估模式
 
     # Global policy
     g_policy = RL_Policy(g_observation_space.shape, g_action_space,
@@ -301,11 +297,12 @@ def main():
         full_map[:, 0:4, :, :])
     global_input[:, 8:, :, :] = local_map[:, 4:, :, :].detach()
     #
-    # 修改
+    #修改
     goal_cat_id = torch.from_numpy(np.asarray(
         [infos[env_idx]['goal_cat_id'] for env_idx
          in range(num_scenes)]))
-    # goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
+    #goal_cat_id = torch.full((num_scenes,),args.target_goal,dtype=torch.int64)
+
 
     extras = torch.zeros(num_scenes, 2)
     extras[:, 0] = global_orientation[:, 0]
@@ -330,30 +327,6 @@ def main():
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
 
-    # 预先根据info中的房间先验生成房间目标掩码，若找不到则保持为None
-    room_goal_maps = [None for _ in range(num_scenes)]
-    for e in range(num_scenes):
-        if 'goal_rooms' in infos[e]:
-            # 将每个目标房间在语义图上投射为掩码
-            room_goal_map = np.zeros((local_w, local_h))
-            for room in infos[e]['goal_rooms']:
-                # 兼容房间名称或编号：先映射为索引，再加上偏移量得到语义图通道
-                if isinstance(room, str):
-                    room_idx = room_channel_map.get(room)
-                else:
-                    room_idx = int(room)
-                if room_idx is None:
-                    continue  # 找不到映射时跳过
-                # 语义通道排列为：前4个基础通道 -> 物体通道 -> 背景通道 -> 房间通道
-                # 因此房间通道索引需避开前述所有通道，需加上物体数与1个背景通道
-                cn = room_idx + NUM_OBJECT_CATEGORIES + 5  # +4为基础通道，+1为背景通道
-
-                if cn < local_map.shape[1]:
-                    room_mask = local_map[e, cn, :, :].cpu().numpy()
-                    room_goal_map[room_mask > 0] = 1
-            if room_goal_map.sum() > 0:
-                room_goal_maps[e] = room_goal_map
-
     goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
     for e in range(num_scenes):
@@ -364,23 +337,14 @@ def main():
         p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
         p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
-        # p_input['goal'] = goal_maps[e]  # global_goals[e]
-        # 若存在房间先验，则优先使用其生成的目标地图，否则使用全局策略结果
-        goal_map = room_goal_maps[e] if room_goal_maps[e] is not None else goal_maps[e]
-        p_input['goal'] = goal_map  # global_goals[e]
+        p_input['goal'] = goal_maps[e]  # global_goals[e]
         p_input['new_goal'] = 1
         p_input['found_goal'] = 0
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
-            # 语义通道总数：物体 + 房间 + 背景
-            sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
-            sem_pred = local_map[e, 4:4 + sem_channels, :, :].cpu().numpy()
-            # 先按通道求 argmax 得到每个像素的类别索引
-            sem_map = sem_pred.argmax(0)
-            # 若该像素所有通道均为 0，说明尚未预测到任何语义类别，显式标记为背景索引
-            no_sem_mask = sem_pred.max(0) == 0
-            sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES  # 背景索引需包含房间类别总数
-            p_input['sem_map_pred'] = sem_map
+            local_map[e, -1, :, :] = 1e-5
+            p_input['sem_map_pred'] = local_map[e, 4:, :, :
+                                                ].argmax(0).cpu().numpy()
 
     obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
 
@@ -393,6 +357,7 @@ def main():
 
     # 用于存储奖励数据
     global_eps_rewards = []
+
 
     for step in range(args.num_training_frames // args.num_processes + 1):
         if finished.sum() == args.num_processes:
@@ -463,7 +428,7 @@ def main():
                 full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = \
                     local_map[e]
                 full_pose[e] = local_pose[e] + \
-                               torch.from_numpy(origins[e]).to(device).float()
+                    torch.from_numpy(origins[e]).to(device).float()
 
                 locs = full_pose[e].cpu().numpy()
                 r, c = locs[1], locs[0]
@@ -479,10 +444,10 @@ def main():
                               lmb[e][0] * args.map_resolution / 100.0, 0.]
 
                 local_map[e] = full_map[e, :,
-                               lmb[e, 0]:lmb[e, 1],
-                               lmb[e, 2]:lmb[e, 3]]
+                                        lmb[e, 0]:lmb[e, 1],
+                                        lmb[e, 2]:lmb[e, 3]]
                 local_pose[e] = full_pose[e] - \
-                                torch.from_numpy(origins[e]).to(device).float()
+                    torch.from_numpy(origins[e]).to(device).float()
 
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
@@ -496,7 +461,7 @@ def main():
             goal_cat_id = torch.from_numpy(np.asarray(
                 [infos[env_idx]['goal_cat_id'] for env_idx
                  in range(num_scenes)]))
-            # goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
+            #goal_cat_id = torch.full((num_scenes,), args.target_goal, dtype=torch.int64)
 
             extras[:, 0] = global_orientation[:, 0]
             extras[:, 1] = goal_cat_id
@@ -509,7 +474,7 @@ def main():
 
             g_process_rewards += g_reward.cpu().numpy()
             g_total_rewards = g_process_rewards * \
-                              (1 - g_masks.cpu().numpy())
+                (1 - g_masks.cpu().numpy())
             g_process_rewards *= g_masks.cpu().numpy()
             per_step_g_rewards.append(np.mean(g_reward.cpu().numpy()))
 
@@ -517,7 +482,7 @@ def main():
                 for total_rew in g_total_rewards:
                     if total_rew != 0:
                         g_episode_rewards.append(total_rew)
-                # 记录每个episode的平均奖励
+                #记录每个episode的平均奖励
                 global_eps_rewards.append(np.mean(g_total_rewards))
 
             # Add samples to global policy storage
@@ -561,28 +526,6 @@ def main():
         for e in range(num_scenes):
             goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
 
-        # 预先根据info中的房间先验生成房间目标掩码
-        room_goal_maps = [None for _ in range(num_scenes)]
-        for e in range(num_scenes):
-            if 'goal_rooms' in infos[e]:
-                room_goal_map = np.zeros((local_w, local_h))
-                for room in infos[e]['goal_rooms']:
-                    # 同样处理房间名称或编号，获取语义图通道索引
-                    if isinstance(room, str):
-                        room_idx = room_channel_map.get(room)
-                    else:
-                        room_idx = int(room)
-                    if room_idx is None:
-                        continue
-                    # 语义图中通道顺序：4个基础通道 + 物体通道 + 背景通道 + 房间通道
-                    # 因此取房间通道时需跳过物体通道和1个背景通道
-                    cn = room_idx + NUM_OBJECT_CATEGORIES + 5  # +4基础通道，+1背景通道
-                    if cn < local_map.shape[1]:
-                        room_mask = local_map[e, cn, :, :].cpu().numpy()
-                        room_goal_map[room_mask > 0] = 1
-                if room_goal_map.sum() > 0:
-                    room_goal_maps[e] = room_goal_map
-
         for e in range(num_scenes):
             cn = infos[e]['goal_cat_id'] + 4
             if local_map[e, cn, :, :].sum() != 0.:
@@ -591,7 +534,6 @@ def main():
                 cat_semantic_scores[cat_semantic_scores > 0] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
-                room_goal_maps[e] = None  # 已找到目标物体，忽略房间先验
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -601,22 +543,15 @@ def main():
             p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
             p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
             p_input['pose_pred'] = planner_pose_inputs[e]
-            # p_input['goal'] = goal_maps[e]  # global_goals[e]
-            # 优先使用房间先验生成的目标地图，否则回退至全局策略/目标物体地图
-            goal_map = room_goal_maps[e] if room_goal_maps[e] is not None else goal_maps[e]
-            p_input['goal'] = goal_map  # global_goals[e]
+            p_input['goal'] = goal_maps[e]  # global_goals[e]
             p_input['new_goal'] = l_step == args.num_local_steps - 1
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:
-                # 语义通道总数：物体 + 房间 + 背景
-                sem_channels = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 1
-                sem_pred = local_map[e, 4:4 + sem_channels, :, :].cpu().numpy()
-                sem_map = sem_pred.argmax(0)
-                # 对于所有通道值均为 0 的像素，认为其尚未观测到语义，设为背景索引
-                sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES  # 背景索引需包含房间类别总数
-                sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES
-                p_input['sem_map_pred'] = sem_map
+                local_map[e, -1, :, :] = 1e-5
+                p_input['sem_map_pred'] = local_map[e, 4:, :,
+                                                    :].argmax(0).cpu().numpy()
+
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
 
@@ -739,7 +674,7 @@ def main():
     # Print and save model performance numbers during evaluation
     if args.eval:
         print("Dumping eval details...")
-
+        
         total_success = []
         total_spl = []
         total_dist = []
@@ -761,7 +696,7 @@ def main():
 
         print(log)
         logging.info(log)
-
+            
         # Save the spl per category
         log = "Success | SPL per category\n"
         for key in success_per_category:
@@ -788,7 +723,6 @@ def main():
     plt.ylabel("Reward")
     plt.legend()
     plt.show()
-
 
 if __name__ == "__main__":
     main()

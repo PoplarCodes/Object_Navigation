@@ -2,11 +2,15 @@ import torch
 
 from .habitat import construct_envs
 
+
 def make_vec_envs(args):
     envs = construct_envs(args)
     envs = VecPyTorch(envs, args.device)
     return envs
 
+
+# Adapted from
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/envs.py#L159
 class VecPyTorch():
 
     def __init__(self, venv, device):

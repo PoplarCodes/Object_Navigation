@@ -1,3 +1,6 @@
+# The following code is largely borrowed from:
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/storage.py
+
 from collections import namedtuple
 
 import numpy as np

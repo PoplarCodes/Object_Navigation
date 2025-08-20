@@ -1,6 +1,8 @@
+# The following code is largely borrowed from:
+# https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/distributions.py
+
 import torch
 import torch.nn as nn
-
 
 from utils.model import AddBias
 

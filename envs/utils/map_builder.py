@@ -1,6 +1,5 @@
 import numpy as np
 import envs.utils.depth_utils as du
-from constants import NUM_ROOM_CATEGORIES  # 引入房间类别数，构建房间先验地图
 
 
 class MapBuilder(object):
@@ -27,11 +26,6 @@ class MapBuilder(object):
         self.map = np.zeros((self.map_size_cm // self.resolution,
                              self.map_size_cm // self.resolution,
                              len(self.z_bins) + 1), dtype=np.float32)
-
-        # 新增房间先验地图，用于记录各栅格属于不同房间的概率
-        self.room_map = np.zeros((self.map_size_cm // self.resolution,
-                                  self.map_size_cm // self.resolution,
-                                  NUM_ROOM_CATEGORIES), dtype=np.float32)
 
         self.agent_height = params['agent_height']
         self.agent_view_angle = params['agent_view_angle']
@@ -83,43 +77,6 @@ class MapBuilder(object):
 
         return agent_view_cropped, map_gt, agent_view_explored, explored_gt
 
-    def update_room_map(self, depth, room_heatmap, current_pose):
-        """将图像坐标的房间概率热图投影到 BEV 地图"""
-        # 若当前无有效的房间热图，则直接返回避免加入均匀噪声
-        if room_heatmap is None or room_heatmap.sum() == 0:
-            return
-        with np.errstate(invalid="ignore"):
-            depth[depth > self.vision_range * self.resolution] = np.NaN
-        # 生成点云并转换到地理坐标系
-        point_cloud = du.get_point_cloud_from_z(depth, self.camera_matrix,
-                                                scale=self.du_scale)
-        agent_view = du.transform_camera_view(point_cloud,
-                                              self.agent_height,
-                                              self.agent_view_angle)
-        geocentric_pc = du.transform_pose(agent_view, current_pose)
-        # 调用 bin_points 以获得与占用图一致的栅格离散化
-        du.bin_points(geocentric_pc, self.map.shape[0],
-                      self.z_bins, self.resolution)
-
-        flat_pc = geocentric_pc.reshape(-1, 3)
-        # 将房间热图展平，方便与点云一一对应
-        flat_probs = room_heatmap.reshape(NUM_ROOM_CATEGORIES, -1)
-        isnotnan = ~np.isnan(flat_pc[:, 0])
-        x_bin = np.round(flat_pc[:, 0] / self.resolution).astype(np.int32)
-        y_bin = np.round(flat_pc[:, 1] / self.resolution).astype(np.int32)
-        valid = (x_bin >= 0) & (x_bin < self.room_map.shape[1]) & \
-                (y_bin >= 0) & (y_bin < self.room_map.shape[0]) & isnotnan
-        x_bin = x_bin[valid]
-        y_bin = y_bin[valid]
-        # 按照概率将像素贡献累加到对应栅格
-        for r in range(NUM_ROOM_CATEGORIES):
-            weights = flat_probs[r, valid]
-            np.add.at(self.room_map[:, :, r], (y_bin, x_bin), weights)
-
-    def get_room_map(self):
-        """返回当前维护的房间先验地图"""
-        return self.room_map
-
     def get_st_pose(self, current_loc):
         loc = [- (current_loc[0] / self.resolution
                   - self.map_size_cm // (self.resolution * 2)) /
@@ -136,11 +93,6 @@ class MapBuilder(object):
         self.map = np.zeros((self.map_size_cm // self.resolution,
                              self.map_size_cm // self.resolution,
                              len(self.z_bins) + 1), dtype=np.float32)
-
-        # 同时重置房间先验地图
-        self.room_map = np.zeros((self.map_size_cm // self.resolution,
-                                  self.map_size_cm // self.resolution,
-                                  NUM_ROOM_CATEGORIES), dtype=np.float32)
 
     def get_map(self):
         return self.map

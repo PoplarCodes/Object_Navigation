@@ -1,14 +1,9 @@
 
 import argparse
 import time
-import os
 
 import torch
 import numpy as np
-try:
-    import cv2  # 用于图像缩放等操作
-except ImportError:  # 若环境缺少 OpenCV，可提示使用者安装
-    cv2 = None
 from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
 from detectron2.config import get_cfg
 from detectron2.utils.logger import setup_logger
@@ -17,18 +12,8 @@ from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import ColorMode, Visualizer
 import detectron2.data.transforms as T
-import cv2  # 读取和处理房间掩码图像
 
-# 引入常量：COCO类别映射、小物体索引、房间与物体类别数量，以及物体与房间的先验对应
-from constants import (
-    coco_categories_mapping,
-    small_object_indices,
-    NUM_ROOM_CATEGORIES,
-    NUM_OBJECT_CATEGORIES,
-    object_room_map,
-    room_channel_map,
-    coco_categories,
-)
+from constants import coco_categories_mapping
 
 
 class SemanticPredMaskRCNN():
@@ -36,8 +21,12 @@ class SemanticPredMaskRCNN():
     def __init__(self, args):
         self.segmentation_model = ImageSegmentation(args)
         self.args = args
-        # 如果提供房间标注目录，则记录下来以便后续读取真实房间掩码
-        self.room_mask_dir = getattr(args, "room_mask_dir", None)
+        # self.device = args.device
+        # # 使用更高精度的预训练模型
+        # self.model = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.COCO_V1)
+        # self.model.to(self.device)
+        # self.model.eval()
+        # self.segmentation_model = self.model
 
     def get_prediction(self, img):
         args = self.args
@@ -50,150 +39,16 @@ class SemanticPredMaskRCNN():
         if args.visualize == 2:
             img = vis_output.get_image()
 
-        # semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
-        # 构建语义输入：15个物体类别 + 背景 + 房间N类
-        semantic_input = np.zeros(
-         (img.shape[0], img.shape[1],
-         NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES))
-        # 针对每个类别仅保留得分最高的实例，避免多个相同目标造成摇摆
-        best_masks = {}
+        semantic_input = np.zeros((img.shape[0], img.shape[1], 15 + 1))
 
         for j, class_idx in enumerate(
                 seg_predictions[0]['instances'].pred_classes.cpu().numpy()):
-            # 获取当前检测的置信度、掩码以及包围盒
-            score = seg_predictions[0]['instances'].scores[j].item()
-            obj_mask = seg_predictions[0]['instances'].pred_masks[j]
-            mask_area = obj_mask.sum().item()
-            bbox = seg_predictions[0]['instances'].pred_boxes.tensor[j]
-            box_w = (bbox[2] - bbox[0]).item()
-            box_h = (bbox[3] - bbox[1]).item()
-            if class_idx in list(coco_categories_mapping.keys()) \
-                    and score >= self.args.sem_pred_prob_thr \
-                    and mask_area >= self.args.min_mask_area:
-                # 通过面积和置信度过滤误检
+            if class_idx in list(coco_categories_mapping.keys()):
                 idx = coco_categories_mapping[class_idx]
-                # 对于小物体额外限制掩码面积和长宽比
-                # 过滤床等大物体被误判为chair，以及狭长障碍物被误判的问题
-                if idx in small_object_indices:
-                    img_area = img.shape[0] * img.shape[1]
-                    if mask_area > self.args.max_mask_ratio * img_area:
-                        continue
-                    # 避免零宽高导致除零错误
-                    if box_w <= 0 or box_h <= 0:
-                        continue
-                    bbox_ratio = max(box_w / box_h, box_h / box_w)
-                    if bbox_ratio > self.args.max_bbox_ratio:
-                        continue
+                obj_mask = seg_predictions[0]['instances'].pred_masks[j] * 1.
+                semantic_input[:, :, idx] += obj_mask.cpu().numpy()
 
-                # 仅保留当前类别得分最高的掩码
-                if idx not in best_masks or score > best_masks[idx][0]:
-                    best_masks[idx] = (score, obj_mask)
-
-        for idx, (_, mask) in best_masks.items():
-            semantic_input[:, :, idx] = mask.cpu().numpy()
-
-        # 读取或生成房间分割结果，若网络未提供则通过自定义方法获取
-        room_masks = seg_predictions[0].get('room_masks', None)
-        if room_masks is None:
-            # 若未提供预测结果，则先尝试从指定目录读取
-            room_masks = self._load_room_masks(img)
-        if room_masks is None:
-            # # 目录中也没有时，可调用内部方法生成（此处为占位实现）
-            # room_masks = self._generate_room_masks(img)
-            # 目录中也没有时，根据当前检测结果动态生成房间概率图
-            room_masks = self._generate_room_masks(img, best_masks)
-        if room_masks is not None:
-            # room_masks 维度应为 [房间数, H, W]
-            room_masks = self._ensure_room_mask_shape(room_masks, img.shape[:2])
-            # 将房间掩码写回预测结果，便于后续模块复用
-            seg_predictions[0]['room_masks'] = room_masks
-            # 如提供目录，则将掩码保存成npy文件，方便离线调试
-            if self.room_mask_dir is not None:
-                self._save_room_masks(room_masks)
-            object_offset = NUM_OBJECT_CATEGORIES + 1  # 跳过物体通道和背景通道
-            for r_idx in range(NUM_ROOM_CATEGORIES):
-                semantic_input[:, :, object_offset + r_idx] = room_masks[r_idx]
         return semantic_input, img
-
-    def _load_room_masks(self, img):
-        """从外部标注目录读取房间掩码，便于在没有房间模型时使用真值掩码"""
-        if self.room_mask_dir is None:
-            return None
-        # 此处默认读取固定文件 room_masks.npy，实际应用中可根据图像索引区分
-        mask_path = os.path.join(self.room_mask_dir, 'room_masks.npy')
-        if os.path.exists(mask_path):
-            return np.load(mask_path)
-        return None
-
-    def _generate_room_masks(self, img, best_masks):
-        """根据检测到的物体和先验生成房间概率热图"""
-        if img is None:
-            return None
-        h, w, _ = img.shape
-        # return np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
-        # 初始化房间热图为0，仅在检测到相关物体时填充对应房间通道
-        room_heatmap = np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
-        # coverage 用于统计当前检测到的物体像素占比
-        coverage = np.zeros((h, w), dtype=np.float32)
-        # 构建类别索引到名称的映射，便于查找房间先验
-        idx2name = {v: k for k, v in coco_categories.items()}
-        used_channels = set()
-        for obj_idx, (score, mask) in best_masks.items():
-            mask_np = mask.cpu().numpy()
-            coverage = np.logical_or(coverage, mask_np)
-            obj_name = idx2name.get(obj_idx, None)
-            if obj_name is None:
-                continue
-            rooms = object_room_map.get(obj_name, [])
-            if not rooms:
-                continue
-            # 将物体置信度均分给所有可能房间，并叠加到对应通道
-            per_room_score = score / len(rooms)
-            for room in rooms:
-                r_idx = room_channel_map[room]
-                room_heatmap[r_idx] += mask_np * per_room_score
-                used_channels.add(r_idx)
-        # 计算物体覆盖比例，用作未出现房间的衰减因子
-        explored_ratio = coverage.mean()
-        decay = 1.0 - explored_ratio
-        for r_idx in range(NUM_ROOM_CATEGORIES):
-            if r_idx not in used_channels:
-                room_heatmap[r_idx] *= decay
-        # 对所有房间通道进行归一化，得到每像素的概率分布
-        norm = room_heatmap.sum(axis=0, keepdims=True)
-        norm[norm == 0] = 1.0
-        room_heatmap = room_heatmap / norm
-        # 将低于0.2的概率视为噪声并置零
-        room_heatmap[room_heatmap < 0.2] = 0
-        return room_heatmap
-
-    def _ensure_room_mask_shape(self, room_masks, img_shape):
-        """确保房间掩码维度与 NUM_ROOM_CATEGORIES 和图像尺寸一致"""
-        h, w = img_shape
-        if isinstance(room_masks, torch.Tensor):
-            room_masks = room_masks.cpu().numpy()
-        room_masks = np.asarray(room_masks)
-        # 若通道数不足则补零，过多则截断
-        if room_masks.shape[0] < NUM_ROOM_CATEGORIES:
-            pad = np.zeros((NUM_ROOM_CATEGORIES - room_masks.shape[0], h, w), dtype=room_masks.dtype)
-            room_masks = np.concatenate([room_masks, pad], axis=0)
-        elif room_masks.shape[0] > NUM_ROOM_CATEGORIES:
-            room_masks = room_masks[:NUM_ROOM_CATEGORIES]
-        # 若尺寸不匹配则调整为图像大小
-        if room_masks.shape[1] != h or room_masks.shape[2] != w:
-            if cv2 is None:
-                raise ImportError("需要安装 OpenCV 才能调整房间掩码尺寸")
-            room_masks = np.array([
-                cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-                for mask in room_masks
-            ])
-        return room_masks
-
-    def _save_room_masks(self, room_masks):
-        """将房间掩码保存到指定目录，便于后续复现或调试"""
-        os.makedirs(self.room_mask_dir, exist_ok=True)
-        mask_path = os.path.join(self.room_mask_dir, 'room_masks.npy')
-        np.save(mask_path, room_masks)
 
 
 
