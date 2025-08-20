@@ -139,3 +139,6 @@ color_palette = [
     1.0, 0.5, 0.0,  # 橙色，对应房间类别
     0.5, 0.0, 0.5,  # 紫色，对应房间类别
 ]
+# 运行时检查色板长度是否覆盖所有类别，避免缺色导致显示为黑色
+assert len(color_palette) >= 3 * (5 + NUM_OBJECT_CATEGORIES + 1 + NUM_ROOM_CATEGORIES), \
+    "color_palette 长度不足，可能导致某些类别显示为黑色"
