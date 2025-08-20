@@ -68,7 +68,7 @@ coco_categories_mapping = {
 object_room_map = {
     "chair": ["living room", "dining room", "study", "bedroom"],
     "couch": ["living room"],
-    "potted plant": ["living room", "office", "balcony"],
+    "potted plant": ["living room", "office"],
     "bed": ["bedroom"],
     "toilet": ["bathroom"],
     "tv": ["living room", "bedroom"],

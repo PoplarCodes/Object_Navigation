@@ -380,8 +380,9 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             room_name = INV_ROOM_CHANNEL_MAP.get(room_idx, "Unknown")
         sem_map += 5
 
-        # 计算背景通道索引：物体通道数 + 偏移量 5
-        background_idx = NUM_OBJECT_CATEGORIES + 5
+        # 计算背景通道索引：物体通道数 + 房间类别数 + 偏移量 5
+        # 增加 NUM_ROOM_CATEGORIES 是为了在语义图中正确跳过所有房间类别
+        background_idx = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES + 5
         # 重新生成背景区域掩码
         no_cat_mask = sem_map == background_idx
         map_mask = np.rint(map_pred) == 1
