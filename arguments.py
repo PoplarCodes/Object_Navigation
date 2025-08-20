@@ -161,6 +161,8 @@ def get_args():
                         help='房型 softmax 温度')
     parser.add_argument('--room_prior_decay', type=float, default=0.0,
                         help='对已探索充分房间的先验衰减系数 0~1')
+    parser.add_argument('--room_prior_topk', type=int, default=0,
+                        help='若>0，则从先验概率最高的Top-K像素中随机挑选目标')
     parser.add_argument('--default_type_logits', type=float, nargs=7,
                         default=[0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1],
                         help='无对象证据时的7维房型默认分布')
