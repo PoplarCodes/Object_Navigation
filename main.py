@@ -379,7 +379,7 @@ def main():
             sem_map = sem_pred.argmax(0)
             # 若该像素所有通道均为 0，说明尚未预测到任何语义类别，显式标记为背景索引
             no_sem_mask = sem_pred.max(0) == 0
-            sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES
+            sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES  # 背景索引需包含房间类别总数
             p_input['sem_map_pred'] = sem_map
 
     obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
@@ -614,7 +614,7 @@ def main():
                 sem_pred = local_map[e, 4:4 + sem_channels, :, :].cpu().numpy()
                 sem_map = sem_pred.argmax(0)
                 # 对于所有通道值均为 0 的像素，认为其尚未观测到语义，设为背景索引
-                no_sem_mask = sem_pred.max(0) == 0
+                sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES + NUM_ROOM_CATEGORIES  # 背景索引需包含房间类别总数
                 sem_map[no_sem_mask] = NUM_OBJECT_CATEGORIES
                 p_input['sem_map_pred'] = sem_map
         obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)

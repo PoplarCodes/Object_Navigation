@@ -374,7 +374,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # 读取该位置的通道索引并反查房间名称
         agent_sem_id = sem_map[agent_r, agent_c]
         room_name = "Unknown"
-        room_offset = NUM_OBJECT_CATEGORIES  # 房间类别在语义图中的起始偏移
+        room_offset = NUM_OBJECT_CATEGORIES + 1  # 房间类别在语义图中的起始偏移，需跳过背景通道后再映射房间类别
         if room_offset <= agent_sem_id < room_offset + NUM_ROOM_CATEGORIES:
             room_idx = agent_sem_id - room_offset
             room_name = INV_ROOM_CHANNEL_MAP.get(room_idx, "Unknown")
@@ -389,7 +389,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         exp_mask = np.rint(exp_pred) == 1
         vis_mask = self.visited_vis[gx1:gx2, gy1:gy2] == 1
 
-        sem_map[no_cat_mask] = 0
+        sem_map[no_cat_mask] = background_idx  # 未预测到类别的像素置为背景索引，显示为淡灰
         m1 = np.logical_and(no_cat_mask, exp_mask)  # 已探索但未知类别的位置
         sem_map[m1] = 2
 
