@@ -85,6 +85,9 @@ class MapBuilder(object):
 
     def update_room_map(self, depth, room_heatmap, current_pose):
         """将图像坐标的房间概率热图投影到 BEV 地图"""
+        # 若当前无有效的房间热图，则直接返回避免加入均匀噪声
+        if room_heatmap is None or room_heatmap.sum() == 0:
+            return
         with np.errstate(invalid="ignore"):
             depth[depth > self.vision_range * self.resolution] = np.NaN
         # 生成点云并转换到地理坐标系
