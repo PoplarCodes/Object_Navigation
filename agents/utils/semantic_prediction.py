@@ -84,16 +84,24 @@ class SemanticPredMaskRCNN():
         for idx, (_, mask) in best_masks.items():
             semantic_input[:, :, idx] = mask.cpu().numpy()
 
-        # 读取房间分割结果，支持来自模型预测或外部标注
+        # 读取或生成房间分割结果，seg_predictions中未提供时尝试从目录加载或调用模型生成
         room_masks = seg_predictions[0].get('room_masks', None)
         if room_masks is None:
+            # 若未提供预测结果，则先尝试从指定目录读取
             room_masks = self._load_room_masks(img)
+        if room_masks is None:
+            # 目录中也没有时，可调用内部方法生成（此处为占位实现）
+            room_masks = self._generate_room_masks(img)
         if room_masks is not None:
             # room_masks 维度应为 [房间数, H, W]
-            if isinstance(room_masks, torch.Tensor):
-                room_masks = room_masks.cpu().numpy()
+            room_masks = self._ensure_room_mask_shape(room_masks, img.shape[:2])
+            # 将房间掩码写回预测结果，便于后续模块复用
+            seg_predictions[0]['room_masks'] = room_masks
+            # 如提供目录，则将掩码保存成npy文件，方便离线调试
+            if self.room_mask_dir is not None:
+                self._save_room_masks(room_masks)
             object_offset = NUM_OBJECT_CATEGORIES + 1  # 跳过物体通道和背景通道
-            for r_idx in range(min(NUM_ROOM_CATEGORIES, len(room_masks))):
+            for r_idx in range(NUM_ROOM_CATEGORIES):
                 semantic_input[:, :, object_offset + r_idx] = room_masks[r_idx]
         return semantic_input, img
 
@@ -106,6 +114,41 @@ class SemanticPredMaskRCNN():
         if os.path.exists(mask_path):
             return np.load(mask_path)
         return None
+
+    def _generate_room_masks(self, img):
+        """调用房间分割模型生成掩码，当前为占位实现"""
+        if img is None:
+            return None
+        # 这里简单返回全零掩码，实际应用中应替换为真实的房间分割模型预测
+        h, w, _ = img.shape
+        return np.zeros((NUM_ROOM_CATEGORIES, h, w), dtype=np.float32)
+
+    def _ensure_room_mask_shape(self, room_masks, img_shape):
+        """确保房间掩码维度与 NUM_ROOM_CATEGORIES 和图像尺寸一致"""
+        h, w = img_shape
+        if isinstance(room_masks, torch.Tensor):
+            room_masks = room_masks.cpu().numpy()
+        room_masks = np.asarray(room_masks)
+        # 若通道数不足则补零，过多则截断
+        if room_masks.shape[0] < NUM_ROOM_CATEGORIES:
+            pad = np.zeros((NUM_ROOM_CATEGORIES - room_masks.shape[0], h, w), dtype=room_masks.dtype)
+            room_masks = np.concatenate([room_masks, pad], axis=0)
+        elif room_masks.shape[0] > NUM_ROOM_CATEGORIES:
+            room_masks = room_masks[:NUM_ROOM_CATEGORIES]
+        # 若尺寸不匹配则调整为图像大小
+        if room_masks.shape[1] != h or room_masks.shape[2] != w:
+            room_masks = np.array([
+                cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+                for mask in room_masks
+            ])
+        return room_masks
+
+    def _save_room_masks(self, room_masks):
+        """将房间掩码保存到指定目录，便于后续复现或调试"""
+        os.makedirs(self.room_mask_dir, exist_ok=True)
+        mask_path = os.path.join(self.room_mask_dir, 'room_masks.npy')
+        np.save(mask_path, room_masks)
+
 
 
 def compress_sem_map(sem_map):
