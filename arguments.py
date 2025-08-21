@@ -153,7 +153,7 @@ def get_args():
                         help='启用在线房间先验以引导长期目标')
     parser.add_argument('--door_min_width_m', type=float, default=0.7,
                         help='门洞最小宽度（米）')
-    parser.add_argument('--door_max_width_m', type=float, default=1.5,
+    parser.add_argument('--door_max_width_m', type=float, default=1.0,
                         help='门洞最大宽度（米）')
     parser.add_argument('--min_room_area_m2', type=float, default=2.0,
                         help='最小房间面积，小于则并回邻居（平方米）')

@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的 logger
 class RoomCfg:
     resolution_m: float = 0.05      # 每像素米数（例：5cm/px）
     door_min_width_m: float = 0.7   # 常见门洞最小宽度
-    door_max_width_m: float = 1.5   # 常见门洞最大宽度
+    door_max_width_m: float = 1.0   # 常见门洞最大宽度
     robot_radius_m: float = 0.18    # 规划用机器人半径
     min_room_area_m2: float = 2.0   # 过小区域并回收
     vote_temp: float = 1.0          # 温度参数（平滑房型 softmax）
