@@ -26,7 +26,7 @@ OnlineRoomInfer: 在线启发式房间分割 + 房型（Room Type）投票
   5 tv, 6 dining_table, 7 oven, 8 sink, 9 refrigerator,
   10 book, 11 clock, 12 vase, 13 cup, 14 bottle
 """
-from __future__ import annotations
+import json  # 引入 json 将打分结果写入文件
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -137,6 +137,9 @@ class OnlineRoomInfer:
         # 预先把语义概率阈值化/平滑
         sem_soft = np.clip(sem_probs, 0.0, 1.0).astype(np.float32)
 
+        # 预备保存对象到房型打分链路的中间结果
+        json_rooms: List[Dict] = []  # 收集所有房间的打分信息
+
         # 计算用于对象证据统计的膨胀核半径（米→像素），覆盖靠墙/障碍的物体
         dil_r = max(int(0.4 / self.cfg.resolution_m), 1)
         if _HAS_CV2:
@@ -167,17 +170,20 @@ class OnlineRoomInfer:
             else:
                 mask_for_hits = mask
 
-            obj_hits = {}
+            obj_hits = {}  # 记录每个对象在房间内的出现证据
             for k in range(self.n_obj):
                 # 使用膨胀后的掩码累积语义置信度作为对象证据
                 v = float((sem_soft[k] * mask_for_hits).sum())
                 if v > 0:
                     obj_hits[k] = v
 
-            # 3) 对象投票 → 房型概率
+            # 3) 对象投票 → 房型概率，同时保存加权贡献
             type_logits = np.zeros(7, dtype=np.float32)
+            weighted_contrib = {}  # 保存每个对象对各房型的加权贡献
             for k, v in obj_hits.items():
-                type_logits += v * self.obj2room[k]
+                contrib = float(v) * self.obj2room[k]
+                type_logits += contrib
+                weighted_contrib[k] = contrib.tolist()
 
             # 4) 几何启发（走廊倾向）
             corr_boost = self._corridor_score(mask)
@@ -205,6 +211,22 @@ class OnlineRoomInfer:
                 obj_hits=obj_hits,
                 explored_ratio=explored_ratio,
             ))
+
+            # 将当前房间的打分链路信息加入列表，用于后续写入 JSON
+            json_rooms.append({
+                "room_id": rid,
+                "obj_hits": {str(k): v for k, v in obj_hits.items()},
+                "weighted_contrib": {str(k): w for k, w in weighted_contrib.items()},
+                "type_logits": type_logits.tolist(),
+                "type_probs": type_probs.tolist(),
+            })
+
+        # 将收集到的打分链路信息写入 JSON 方便调试与可视化
+        if json_rooms:
+            os.makedirs('tmp/obj_romm', exist_ok=True)
+            with open(f'tmp/obj_romm/obj_room_env{env_id}_step{step}.json', 'w', encoding='utf-8') as f:
+                json.dump(json_rooms, f, ensure_ascii=False, indent=2)
+
 
         # 保存房型概率供可视化
         if len(self.rooms) > 0:
