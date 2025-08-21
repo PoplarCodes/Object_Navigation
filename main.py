@@ -342,7 +342,6 @@ def main():
     found_goal = [0 for _ in range(num_scenes)]
 
     for e in range(num_scenes):
-        goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
         cn = infos[e]['goal_cat_id'] + 4
         if local_map[e, cn, :, :].sum() != 0.:
             cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
@@ -372,7 +371,22 @@ def main():
                     gy, gx = np.unravel_index(choice, prior.shape)
                     goal_maps[e][:, :] = 0
                     goal_maps[e][gy, gx] = 1
-                # 否则保留全局策略给出的global_goals
+                # 否则使用全局策略给出的随机目标
+                # 否则使用全局策略给出的随机目标
+            else:
+                # 先验无效时退化为对全局策略输出的随机采样
+                gx, gy = global_goals[e]
+                shift = np.random.randint(-1, 2, size=2)
+                gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+                gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                goal_maps[e][gx, gy] = 1
+        else:
+            gx, gy = global_goals[e]
+            # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
+            shift = np.random.randint(-1, 2, size=2)
+            gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+            gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+            goal_maps[e][gx, gy] = 1
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -569,9 +583,6 @@ def main():
         goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
         for e in range(num_scenes):
-            goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-
-        for e in range(num_scenes):
             cn = infos[e]['goal_cat_id'] + 4
             if local_map[e, cn, :, :].sum() != 0.:
                 cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
@@ -601,7 +612,27 @@ def main():
                         gy, gx = np.unravel_index(choice, prior.shape)
                         goal_maps[e][:, :] = 0
                         goal_maps[e][gy, gx] = 1
-                    # 否则保留全局策略给出的global_goals
+                    else:
+                        # 先验无效或不可用时，对全局策略输出进行随机采样
+                        gx, gy = global_goals[e]
+                        shift = np.random.randint(-1, 2, size=2)
+                        gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+                        gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                        goal_maps[e][gx, gy] = 1
+                else:
+                    # 先验无法匹配尺寸或为空，同样使用随机目标
+                    gx, gy = global_goals[e]
+                    shift = np.random.randint(-1, 2, size=2)
+                    gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+                    gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                    goal_maps[e][gx, gy] = 1
+            else:
+                gx, gy = global_goals[e]
+                # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
+                shift = np.random.randint(-1, 2, size=2)
+                gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+                gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                goal_maps[e][gx, gy] = 1
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
