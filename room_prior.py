@@ -137,16 +137,41 @@ class OnlineRoomInfer:
         # 预先把语义概率阈值化/平滑
         sem_soft = np.clip(sem_probs, 0.0, 1.0).astype(np.float32)
 
+        # 计算用于对象证据统计的膨胀核半径（将房间地面向外扩张，覆盖紧邻的墙体/物体像素）
+        dil_r = max(int(0.4 / self.cfg.resolution_m), 1)
+        if _HAS_CV2:
+            k_dil = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                             (2 * dil_r + 1, 2 * dil_r + 1))
+        elif _HAS_SK:
+            k_dil = sk_morph.disk(dil_r)
+        elif _HAS_ND:
+            k_dil = np.ones((2 * dil_r + 1, 2 * dil_r + 1), dtype=bool)
+        else:
+            k_dil = None  # 无可用库时退化为原始掩码
+
         # 计算每个房间的 hits（对象出现证据）
         for rid in range(1, n_rooms + 1):
             mask = (room_id_map == rid)
             area_px = int(mask.sum())
             if area_px == 0:
                 continue
+
+            # 膨胀房间掩码，使统计对象证据时包含贴墙/障碍的像素
+            if k_dil is not None:
+                if _HAS_CV2:
+                    mask_dil = cv2.dilate(mask.astype(np.uint8) * 255,
+                                           k_dil) > 0
+                elif _HAS_SK:
+                    mask_dil = sk_morph.binary_dilation(mask, k_dil)
+                else:  # _HAS_ND
+                    mask_dil = ndi.binary_dilation(mask, structure=k_dil)
+            else:
+                mask_dil = mask
+
             obj_hits = {}
             for k in range(self.n_obj):
                 # 采用平均置信度 * 像素数 的简单积分作为证据
-                v = float((sem_soft[k] * mask).sum())
+                v = float((sem_soft[k] * mask_dil).sum())
                 if v > 0:
                     obj_hits[k] = v
 

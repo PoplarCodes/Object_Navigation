@@ -349,7 +349,10 @@ def main():
         traversible = (local_map[e, 0].cpu().numpy() == 0)
         explored = (local_map[e, 1].cpu().numpy() > 0)
         sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-        room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=0)  # 携带环境和步骤编号，保存房型概率供可视化
+        explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
+        room_infer[e].update(traversible, explored, sem_probs,
+                             env_id=e, step=0,
+                             explored_ratio_map=explored_ratio_map)  # 携带环境和步骤编号，保存房型概率供可视化
 
     extras = torch.zeros(num_scenes, 2)
     extras[:, 0] = global_orientation[:, 0]
@@ -546,7 +549,10 @@ def main():
                 traversible = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-                room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=g_step)  # 携带环境和步骤编号，保存房型概率供可视化
+                explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
+                room_infer[e].update(traversible, explored, sem_probs,
+                                     env_id=e, step=g_step,
+                                     explored_ratio_map=explored_ratio_map)  # 携带环境和步骤编号，保存房型概率供可视化
 
             # Get exploration reward and metrics
             g_reward = torch.from_numpy(np.asarray(
