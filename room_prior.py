@@ -107,6 +107,10 @@ class OnlineRoomInfer:
         # 归一化对象→房型先验
         row_sum = _OBJ2ROOM.sum(axis=1, keepdims=True) + 1e-6
         self.obj2room = _OBJ2ROOM / row_sum
+        # Episode 缓冲：按环境记录当前 Episode 的打分链路
+        self._episode_buffers: Dict[int, List[Dict]] = {}
+        # Episode 计数：用于输出文件命名
+        self._episode_ids: Dict[int, int] = {}
 
     # ------------------------- 对外主接口 -------------------------
     def update(self,
@@ -120,6 +124,15 @@ class OnlineRoomInfer:
         """基于当前栅格状态与语义置信度，更新房间分割与房型概率。
         注意：需保证输入尺寸一致，且与长期目标使用的坐标一致。
         """
+        # step 为 0 时意味着新的 Episode 开始，先将上一 Episode 的缓存写盘
+        if env_id not in self._episode_buffers:
+            # 第一次见到该环境，初始化缓存与计数
+            self._episode_buffers[env_id] = []
+            self._episode_ids[env_id] = 0
+        elif step == 0:
+            # 新 Episode，写出旧 Episode 的 JSON
+            self._flush_episode_json(env_id)
+
         H, W = traversible.shape
         assert explored.shape == (H, W)
         assert sem_probs.shape[1:] == (H, W)
@@ -136,6 +149,9 @@ class OnlineRoomInfer:
 
         # 预先把语义概率阈值化/平滑
         sem_soft = np.clip(sem_probs, 0.0, 1.0).astype(np.float32)
+
+        # 预备保存对象到房型打分链路的中间结果
+        json_rooms: List[Dict] = []  # 收集所有房间的打分信息
 
         # 预备保存对象到房型打分链路的中间结果
         json_rooms: List[Dict] = []  # 收集所有房间的打分信息
@@ -221,12 +237,12 @@ class OnlineRoomInfer:
                 "type_probs": type_probs.tolist(),
             })
 
-        # 将收集到的打分链路信息写入 JSON 方便调试与可视化
-        if json_rooms:
-            os.makedirs('tmp/obj_romm', exist_ok=True)
-            with open(f'tmp/obj_romm/obj_room_env{env_id}_step{step}.json', 'w', encoding='utf-8') as f:
-                json.dump(json_rooms, f, ensure_ascii=False, indent=2)
-
+            # 若有房间信息，将本步结果加入 Episode 缓存，稍后统一写入
+            if json_rooms:
+                self._episode_buffers[env_id].append({
+                    "step": int(step),
+                    "rooms": json_rooms,
+                })
 
         # 保存房型概率供可视化
         if len(self.rooms) > 0:
@@ -234,6 +250,23 @@ class OnlineRoomInfer:
             os.makedirs('tmp/room_map', exist_ok=True)
             np.save(f'tmp/room_map/room_probs_env{env_id}_step{step}.npy', type_probs_all)
             np.save(f'tmp/room_map/room_map_env{env_id}_step{step}.npy', self.room_id_map)
+
+    def dump_episode_json(self, env_id: int) -> None:
+        """主动将某环境当前 Episode 的缓存写入 JSON 文件。"""
+        self._flush_episode_json(env_id)
+
+    def _flush_episode_json(self, env_id: int) -> None:
+        """内部工具：把缓存写入 tmp/obj_romm 并清空。"""
+        buf = self._episode_buffers.get(env_id, [])
+        if not buf:
+            return
+        ep = self._episode_ids.get(env_id, 0)
+        os.makedirs('tmp/obj_romm', exist_ok=True)
+        with open(f'tmp/obj_romm/obj_room_env{env_id}_ep{ep}.json', 'w', encoding='utf-8') as f:
+            json.dump(buf, f, ensure_ascii=False, indent=2)
+        self._episode_buffers[env_id] = []
+        self._episode_ids[env_id] = ep + 1
+
 
     def build_goal_prior(self, target_obj_id: int) -> np.ndarray:
         """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化。
