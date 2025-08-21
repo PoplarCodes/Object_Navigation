@@ -394,7 +394,8 @@ def main():
         p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
         p_input['pose_pred'] = planner_pose_inputs[e]
         p_input['goal'] = goal_maps[e]  # global_goals[e]
-        p_input['new_goal'] = 1
+        # p_input['new_goal'] = 1  # 原逻辑：初始化阶段总是触发新目标
+        p_input['new_goal'] = False  # 初始化时不触发新目标
         p_input['found_goal'] = found_goal[e]
         p_input['wait'] = wait_env[e] or finished[e]
         if args.visualize or args.print_images:
@@ -643,7 +644,10 @@ def main():
             p_input['exp_pred'] = local_map[e, 1, :, :].cpu().numpy()
             p_input['pose_pred'] = planner_pose_inputs[e]
             p_input['goal'] = goal_maps[e]  # global_goals[e]
-            p_input['new_goal'] = l_step == args.num_local_steps - 1
+            if l_step == args.num_local_steps - 1:
+                p_input['new_goal'] = True  # 局部周期结束，触发新目标
+            else:
+                p_input['new_goal'] = False  # 非周期末，不触发新目标
             p_input['found_goal'] = found_goal[e]
             p_input['wait'] = wait_env[e] or finished[e]
             if args.visualize or args.print_images:

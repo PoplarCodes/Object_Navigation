@@ -63,6 +63,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         args = self.args
 
         obs, info = super().reset()
+        info['g_reward'] = 0  # 初始化累计奖励，避免缺少键导致报错
         obs = self._preprocess_obs(obs)
 
         self.obs_shape = obs.shape
