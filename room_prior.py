@@ -245,10 +245,6 @@ class OnlineRoomInfer:
                 "type_probs": type_probs.tolist(),
             })
 
-            # ----------- 循环结束后统一写入 Episode 缓存，避免同一步多次写入 -----------
-            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
-            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
-            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
         if json_rooms:
             buf = self._episode_buffers.setdefault(env_id, [])
             cur_step = int(step)
@@ -266,8 +262,11 @@ class OnlineRoomInfer:
             type_probs_all = np.stack([r.type_probs for r in self.rooms], axis=0)
             # 缓存当前步的房型概率供 Episode 结束时统一写盘
             self._room_prob_buffers.setdefault(env_id, []).append({"step": int(step), "probs": type_probs_all})
-            os.makedirs('tmp/room_map', exist_ok=True)
-            np.save(f'tmp/room_map/room_map_env{env_id}_step{step}.npy', self.room_id_map)
+            ep = self._episode_ids.get(env_id, 0)  # 当前Episode编号
+            # 目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_map_step<step>.npy
+            base = os.path.join(self.dump_dir, "room_map", f"thread_{env_id}", f"eps_{ep}")
+            os.makedirs(base, exist_ok=True)  # 递归创建目录
+            np.save(os.path.join(base, f"room_map_step{step}.npy"), self.room_id_map)
 
     def dump_episode_json(self, env_id: int) -> None:
         """主动将某环境当前 Episode 的缓存写入 JSON 文件。"""
@@ -275,7 +274,9 @@ class OnlineRoomInfer:
         self._flush_episode_json(env_id)
 
     def _flush_room_probs(self, env_id: int) -> None:
-        """内部工具：写出某环境缓存的房型概率并清空。"""
+        """内部工具：写出某环境缓存的房型概率并清空。
+        目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_probs.npz
+        """
         buf = self._room_prob_buffers.get(env_id, [])
         if not buf:
             return  # 缓存为空直接返回
@@ -502,7 +503,6 @@ class OnlineRoomInfer:
 # -------------------------- 便捷构造函数 --------------------------
 def build_online_room_infer_from_args(args, n_obj_classes: int = 15) -> OnlineRoomInfer:
     # 注意：项目里 args.map_resolution 通常是“厘米/像素”，例如 5 表示 5cm/px
-    # 这里转换为“米/像素”。若你的 args 定义不同，请据实调整。
     res_m = getattr(args, 'map_resolution', 5.0) / 100.0
     cfg = RoomCfg(
         resolution_m=res_m,
