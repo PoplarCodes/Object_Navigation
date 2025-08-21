@@ -18,24 +18,9 @@ from room_prior import build_online_room_infer_from_args  # 引入房间先验�
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
-# --------------------- 重采样阈值配置 ---------------------
-# RESAMPLE_DIFF_THRESH 可为以下形式：
-# 1) float：使用固定阈值；
-# 2) ('std', k)：阈值为先验标准差的 k 倍；
-# 3) ('ratio', k)：阈值为先验最大值/最小值比值的 k 倍。
-RESAMPLE_DIFF_THRESH = ('std', 0.5)
-
-
-def compute_resample_thresh(prior: np.ndarray) -> float:
-    """根据当前先验计算重采样阈值"""
-    if isinstance(RESAMPLE_DIFF_THRESH, tuple):
-        mode, scale = RESAMPLE_DIFF_THRESH
-        if mode == 'std':
-            return float(prior.std() * scale)
-        if mode == 'ratio':
-            mn = float(prior.min()) + 1e-6
-            return float((prior.max() / mn) * scale)
-    return float(RESAMPLE_DIFF_THRESH
+# ------------------------- 房间先验策略参数 -------------------------
+RESAMPLE_DIFF_THRESH = 1e-3  # 当先验最大最小差超过该阈值才触发重新采样
+STICKY_BETTER_THRESH = 1e-3  # 新目标概率相对旧目标提升超过该值才更换
 
 
 def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal):
@@ -144,8 +129,8 @@ def main():
                   for _ in range(num_scenes)]
 
     # 粘滞机制：记录上一次选择的目标像素及其概率
-    last_priors = [None for _ in range(num_scenes)]
-    last_goals = [None for _ in range(num_scenes)]
+    last_goals = [None for _ in range(num_scenes)]  # 上一次的目标坐标 (x, y)
+    last_scores = [0.0 for _ in range(num_scenes)]  # 该目标在先验中的概率值
 
     """
     开始环境：创建并行的模拟环境，加载场景和智能体
@@ -412,7 +397,6 @@ def main():
             cat_semantic_scores[cat_semantic_scores > 0] = 1.
             goal_maps[e] = cat_semantic_scores
             found_goal[e] = 1
-            last_priors[e] = None  # 已找到目标，清空先验记录
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
             np.save(f'tmp/room_map/room_prior_env{e}_step0.npy', prior)  # 保存先验热力图以检查房型推理效果
@@ -423,22 +407,24 @@ def main():
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
             fallback = (gx, gy)
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                # 计算当前先验与上一先验的差异，并按配置得到阈值
-                diff = np.inf if last_priors[e] is None else np.abs(prior - last_priors[e]).mean()
-                thresh = compute_resample_thresh(prior)
-                if last_priors[e] is None or diff > thresh:
-                    # 房间级采样：按房间概率选择目标房间，再取质心
-                    gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
-                    last_priors[e] = prior
-                    last_goals[e] = (gx, gy)
+                diff = prior.max() - prior.min()
+                if diff > RESAMPLE_DIFF_THRESH:
+                    # 先验区分度足够高，尝试采样新目标
+                    cand_x, cand_y = sample_goal_by_room(prior, room_infer[e], fallback)
+                    cand_score = prior[cand_y, cand_x]
+                    prev_score = prior[last_goals[e][1], last_goals[e][0]] if last_goals[e] is not None else -1.0
+                    if last_goals[e] is None or cand_score - prev_score > STICKY_BETTER_THRESH:
+                        gx, gy = cand_x, cand_y
+                    else:
+                        gx, gy = last_goals[e]
                 else:
-                    # 先验变化不大，沿用旧目标
-                    gx, gy = last_goals[e]
+                    # 区分度过低，保持旧目标或使用后备
+                    gx, gy = last_goals[e] if last_goals[e] is not None else fallback
             else:
                 # 当房间分割不可用或先验无效时，退化为像素级采样
-                gx, gy = fallback
-                last_priors[e] = None
-                last_goals[e] = (gx, gy)
+                gx, gy = last_goals[e] if last_goals[e] is not None else fallback
+            last_goals[e] = (gx, gy)
+            last_scores[e] = prior[gy, gx] if prior.shape == goal_maps[e].shape else 0.0
             goal_maps[e][:, :] = 0
             goal_maps[e][gx, gy] = 1
         else:
@@ -448,8 +434,6 @@ def main():
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
             goal_maps[e][gx, gy] = 1
-            last_priors[e] = None
-            last_goals[e] = (gx, gy)
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -657,7 +641,6 @@ def main():
                 cat_semantic_scores[cat_semantic_scores > 0] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
-                last_priors[e] = None  # 已找到目标，清空先验记录
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
                 np.save(f'tmp/room_map/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
@@ -668,22 +651,22 @@ def main():
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
                 fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                    # 计算当前先验与上一先验的差异，并按配置得到阈值
-                    diff = np.inf if last_priors[e] is None else np.abs(prior - last_priors[e]).mean()
-                    thresh = compute_resample_thresh(prior)
-                    if last_priors[e] is None or diff > thresh:
-                        # 房间级采样：基于房间概率选择目标房间，并取质心作为目标
-                        gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
-                        last_priors[e] = prior
-                        last_goals[e] = (gx, gy)
+                    diff = prior.max() - prior.min()
+                    if diff > RESAMPLE_DIFF_THRESH:
+                        cand_x, cand_y = sample_goal_by_room(prior, room_infer[e], fallback)
+                        cand_score = prior[cand_y, cand_x]
+                        prev_score = prior[last_goals[e][1], last_goals[e][0]] if last_goals[e] is not None else -1.0
+                        if last_goals[e] is None or cand_score - prev_score > STICKY_BETTER_THRESH:
+                            gx, gy = cand_x, cand_y
+                        else:
+                            gx, gy = last_goals[e]
                     else:
-                        # 先验变化不大，沿用旧目标
-                        gx, gy = last_goals[e]
+                        gx, gy = last_goals[e] if last_goals[e] is not None else fallback
                 else:
                     # 房间分割不可用时，退化为像素级采样
-                    gx, gy = fallback
-                    last_priors[e] = None
-                    last_goals[e] = (gx, gy)
+                    gx, gy = last_goals[e] if last_goals[e] is not None else fallback
+                last_goals[e] = (gx, gy)
+                last_scores[e] = prior[gy, gx] if prior.shape == goal_maps[e].shape else 0.0
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gx, gy] = 1
             else:
@@ -693,8 +676,6 @@ def main():
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
                 goal_maps[e][gx, gy] = 1
-                last_priors[e] = None
-                last_goals[e] = (gx, gy)
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
