@@ -18,10 +18,6 @@ from room_prior import build_online_room_infer_from_args  # 引入房间先验�
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
-# ------------------------- 房间先验策略参数 -------------------------
-RESAMPLE_DIFF_THRESH = 1e-3  # 当先验最大最小差超过该阈值才触发重新采样
-STICKY_BETTER_THRESH = 1e-3  # 新目标概率相对旧目标提升超过该值才更换
-
 
 def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal):
     """根据房间先验在房间级别采样长期目标。
@@ -127,11 +123,6 @@ def main():
     # 初始化房间先验推理器，每个环境一个实例
     room_infer = [build_online_room_infer_from_args(args, n_obj_classes=15)
                   for _ in range(num_scenes)]
-
-    # 粘滞机制：记录上一次选择的目标像素及其概率
-    last_goals = [None for _ in range(num_scenes)]  # 上一次的目标坐标 (x, y)
-    last_scores = [0.0 for _ in range(num_scenes)]  # 该目标在先验中的概率值
-
     """
     开始环境：创建并行的模拟环境，加载场景和智能体
     返回环境对象 envs，其初始状态包括观察数据 obs 和环境信息 infos
@@ -358,9 +349,6 @@ def main():
         traversible = (local_map[e, 0].cpu().numpy() == 0)
         explored = (local_map[e, 1].cpu().numpy() > 0)
         sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-        # 阈值与粘滞策略仅在采样阶段生效：
-        # RESAMPLE_DIFF_THRESH 控制先验差异不足时不触发重采样，
-        # STICKY_BETTER_THRESH 则避免新目标收益不大时频繁切换。
         room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=0)  # 携带环境和步骤编号，保存房型概率供可视化
 
     extras = torch.zeros(num_scenes, 2)
@@ -407,24 +395,11 @@ def main():
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
             fallback = (gx, gy)
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                diff = prior.max() - prior.min()
-                if diff > RESAMPLE_DIFF_THRESH:
-                    # 先验区分度足够高，尝试采样新目标
-                    cand_x, cand_y = sample_goal_by_room(prior, room_infer[e], fallback)
-                    cand_score = prior[cand_y, cand_x]
-                    prev_score = prior[last_goals[e][1], last_goals[e][0]] if last_goals[e] is not None else -1.0
-                    if last_goals[e] is None or cand_score - prev_score > STICKY_BETTER_THRESH:
-                        gx, gy = cand_x, cand_y
-                    else:
-                        gx, gy = last_goals[e]
-                else:
-                    # 区分度过低，保持旧目标或使用后备
-                    gx, gy = last_goals[e] if last_goals[e] is not None else fallback
+                # 房间级采样：按房间概率选择目标房间，再取质心
+                gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
             else:
                 # 当房间分割不可用或先验无效时，退化为像素级采样
-                gx, gy = last_goals[e] if last_goals[e] is not None else fallback
-            last_goals[e] = (gx, gy)
-            last_scores[e] = prior[gy, gx] if prior.shape == goal_maps[e].shape else 0.0
+                gx, gy = fallback
             goal_maps[e][:, :] = 0
             goal_maps[e][gx, gy] = 1
         else:
@@ -493,8 +468,6 @@ def main():
                 wait_env[e] = 1.
                 update_intrinsic_rew(e)
                 init_map_and_pose_for_env(e)
-                last_goals[e] = None  # 环境重置时清空上一次目标
-                last_scores[e] = 0.0  # 清空对应的先验概率
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -573,7 +546,6 @@ def main():
                 traversible = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-                # 采样阶段会参考阈值 RESAMPLE_DIFF_THRESH 与粘滞阈值 STICKY_BETTER_THRESH，避免收益不足时频繁切换目标。
                 room_infer[e].update(traversible, explored, sem_probs, env_id=e, step=g_step)  # 携带环境和步骤编号，保存房型概率供可视化
 
             # Get exploration reward and metrics
@@ -651,22 +623,11 @@ def main():
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
                 fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                    diff = prior.max() - prior.min()
-                    if diff > RESAMPLE_DIFF_THRESH:
-                        cand_x, cand_y = sample_goal_by_room(prior, room_infer[e], fallback)
-                        cand_score = prior[cand_y, cand_x]
-                        prev_score = prior[last_goals[e][1], last_goals[e][0]] if last_goals[e] is not None else -1.0
-                        if last_goals[e] is None or cand_score - prev_score > STICKY_BETTER_THRESH:
-                            gx, gy = cand_x, cand_y
-                        else:
-                            gx, gy = last_goals[e]
-                    else:
-                        gx, gy = last_goals[e] if last_goals[e] is not None else fallback
+                    # 房间级采样：基于房间概率选择目标房间，并取质心作为目标
+                    gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
                 else:
                     # 房间分割不可用时，退化为像素级采样
-                    gx, gy = last_goals[e] if last_goals[e] is not None else fallback
-                last_goals[e] = (gx, gy)
-                last_scores[e] = prior[gy, gx] if prior.shape == goal_maps[e].shape else 0.0
+                    gx, gy = fallback
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gx, gy] = 1
             else:
