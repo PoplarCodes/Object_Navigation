@@ -19,6 +19,42 @@ from room_prior import build_online_room_infer_from_args  # 引入房间先验�
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
+def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal):
+    """根据房间先验在房间级别采样长期目标。
+
+    优点：先在房间层面聚合概率，降低单个像素噪声的影响，使目标更稳定且符合语义结构。
+    当房间分割缺失或概率无效时，退化为像素级采样的后备策略。
+    """
+    # 房间信息缺失直接返回后备目标
+    if room_infer_obj is None or len(room_infer_obj.rooms) == 0:
+        return fallback_goal
+
+    # 计算每个房间在先验中的概率总和
+    room_probs = np.array([
+        prior[r.pixels].sum() for r in room_infer_obj.rooms
+    ], dtype=np.float32)
+
+    total = float(room_probs.sum())
+    if total <= 0:
+        # 概率无效时回退到像素级采样
+        return fallback_goal
+
+    room_probs /= total
+
+    # 按房间概率选择目标房间
+    rid = int(np.random.choice(len(room_infer_obj.rooms), p=room_probs))
+    mask = room_infer_obj.rooms[rid].pixels
+
+    coords = np.argwhere(mask)
+    if coords.size == 0:
+        # 极端情况下房间没有像素，同样回退
+        return fallback_goal
+
+    # 取房间像素的质心作为目标点
+    cy, cx = coords.mean(axis=0).astype(int)
+    return int(cx), int(cy)
+
+
 def main():
     args = get_args()
     os.makedirs('tmp/room_map', exist_ok=True)  # 创建 tmp/room_map 目录，保存先验热力图以检查房型推理效果
@@ -352,34 +388,20 @@ def main():
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
             np.save(f'tmp/room_map/room_prior_env{e}_step0.npy', prior)  # 保存先验热力图以检查房型推理效果
+            # 先对全局策略输出加入扰动，作为像素级采样的后备方案
+            gx, gy = global_goals[e]
+            shift = np.random.randint(-1, 2, size=2)
+            gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+            gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+            fallback = (gx, gy)
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                n_rooms = len(room_infer[e].rooms)  # 当前环境中的房间数量
-                # 若房间数量≤1或先验近似均匀，则跳过先验
-                if n_rooms > 1 and prior.max() - prior.min() > 1e-4:
-                    flat = prior.ravel()
-                    flat = flat / (flat.sum() + 1e-6)  # 归一化概率
-                    coords = np.arange(flat.size)
-                    topk = getattr(args, 'room_prior_topk', 0)
-                    if topk > 0:
-                        k = min(topk, flat.size)
-                        topk_idx = np.argpartition(-flat, k - 1)[:k]
-                        # 在先验概率最高的Top-K坐标中随机挑选
-                        choice = np.random.choice(topk_idx)
-                    else:
-                        # 按先验概率对所有像素采样
-                        choice = np.random.choice(coords, p=flat)
-                    gy, gx = np.unravel_index(choice, prior.shape)
-                    goal_maps[e][:, :] = 0
-                    goal_maps[e][gy, gx] = 1
-                # 否则使用全局策略给出的随机目标
-                # 否则使用全局策略给出的随机目标
+                # 房间级采样：按房间概率选择目标房间，再取质心
+                gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
             else:
-                # 先验无效时退化为对全局策略输出的随机采样
-                gx, gy = global_goals[e]
-                shift = np.random.randint(-1, 2, size=2)
-                gx = int(np.clip(gx + shift[0], 0, local_w - 1))
-                gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-                goal_maps[e][gx, gy] = 1
+                # 当房间分割不可用或先验无效时，退化为像素级采样
+                gx, gy = fallback
+            goal_maps[e][:, :] = 0
+            goal_maps[e][gx, gy] = 1
         else:
             gx, gy = global_goals[e]
             # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
@@ -594,39 +616,20 @@ def main():
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
                 np.save(f'tmp/room_map/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
+                # 预先对全局策略输出加入扰动，作为像素级采样的后备方案
+                gx, gy = global_goals[e]
+                shift = np.random.randint(-1, 2, size=2)
+                gx = int(np.clip(gx + shift[0], 0, local_w - 1))
+                gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                    n_rooms = len(room_infer[e].rooms)  # 当前环境中的房间数量
-                    # 若房间数量≤1或先验近似均匀，则跳过先验
-                    if n_rooms > 1 and prior.max() - prior.min() > 1e-4:
-                        flat = prior.ravel()
-                        flat = flat / (flat.sum() + 1e-6)  # 归一化概率
-                        coords = np.arange(flat.size)
-                        topk = getattr(args, 'room_prior_topk', 0)
-                        if topk > 0:
-                            k = min(topk, flat.size)
-                            topk_idx = np.argpartition(-flat, k - 1)[:k]
-                            # 在先验概率最高的Top-K坐标中随机挑选
-                            choice = np.random.choice(topk_idx)
-                        else:
-                            # 按先验概率对所有像素采样
-                            choice = np.random.choice(coords, p=flat)
-                        gy, gx = np.unravel_index(choice, prior.shape)
-                        goal_maps[e][:, :] = 0
-                        goal_maps[e][gy, gx] = 1
-                    else:
-                        # 先验无效或不可用时，对全局策略输出进行随机采样
-                        gx, gy = global_goals[e]
-                        shift = np.random.randint(-1, 2, size=2)
-                        gx = int(np.clip(gx + shift[0], 0, local_w - 1))
-                        gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-                        goal_maps[e][gx, gy] = 1
+                    # 房间级采样：基于房间概率选择目标房间，并取质心作为目标
+                    gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
                 else:
-                    # 先验无法匹配尺寸或为空，同样使用随机目标
-                    gx, gy = global_goals[e]
-                    shift = np.random.randint(-1, 2, size=2)
-                    gx = int(np.clip(gx + shift[0], 0, local_w - 1))
-                    gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-                    goal_maps[e][gx, gy] = 1
+                    # 房间分割不可用时，退化为像素级采样
+                    gx, gy = fallback
+                goal_maps[e][:, :] = 0
+                goal_maps[e][gx, gy] = 1
             else:
                 gx, gy = global_goals[e]
                 # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
