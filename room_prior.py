@@ -5,7 +5,7 @@ OnlineRoomInfer: 在线启发式房间分割 + 房型（Room Type）投票
 
 依赖：
 - 必选：numpy
-- 可选：cv2 或 skimage（若都缺失，退化为连通域分割，不做“窄通道切割”）
+- 可选：cv2、skimage 或 scipy.ndimage（若都缺失，退化为连通域分割，不做“窄通道切割”）
 
 输出：
 - self.room_id_map: int32 [H, W]，>=1 表示房间ID，0 表示未知/未探索
@@ -31,6 +31,7 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import os  # 引入 os 以保存房型概率供可视化
+import logging  # 引入 logging 用于输出警告
 try:
     import cv2  # type: ignore
     _HAS_CV2 = True
@@ -43,6 +44,13 @@ try:
 except Exception:
     _HAS_SK = False
 
+try:
+    from scipy import ndimage as ndi  # type: ignore  # 尝试导入 scipy.ndimage 以提供形态学操作
+    _HAS_ND = True
+except Exception:
+    _HAS_ND = False
+
+logger = logging.getLogger(__name__)  # 获取当前模块的 logger
 
 @dataclass
 class RoomCfg:
@@ -216,7 +224,7 @@ class OnlineRoomInfer:
           - 以 door_max/2 为半径做一次腐蚀，打断狭窄通道连接
           - 连通域标记得到房间原型；再膨胀回去以贴近原自由空间
           - 过滤过小区域并并入相邻房间
-        若无 cv2/skimage，则退化为单次连通域标记。
+        若无 cv2/skimage/scipy，则退化为单次连通域标记。
         """
         H, W = free_mask.shape
         fm = (free_mask.astype(np.uint8) > 0)
@@ -245,8 +253,8 @@ class OnlineRoomInfer:
             labels = dilated_labels
         elif _HAS_SK:
             fm_bool = fm
-            fm_bool = sk_morph.binary_closing(fm_bool, sk_morph.disk(1))
-            eroded = sk_morph.binary_erosion(fm_bool, sk_morph.disk(r_max))
+            fm_bool = sk_morph.binary_closing(fm_bool, sk_morph.disk(1))  # skimage 闭运算
+            eroded = sk_morph.binary_erosion(fm_bool, sk_morph.disk(r_max))  # skimage 腐蚀
             labels = sk_measure.label(eroded, background=0, connectivity=1)
             # 膨胀回去
             out = np.zeros_like(labels, dtype=np.int32)
@@ -255,7 +263,21 @@ class OnlineRoomInfer:
                 dm = sk_morph.binary_dilation(labels == lid, dil)
                 out[dm] = lid
             labels = out
+        elif _HAS_ND:
+            fm_bool = fm
+            fm_bool = ndi.binary_closing(fm_bool, structure=np.ones((3, 3), bool))  # scipy 闭运算
+            k = np.ones((2 * r_max + 1, 2 * r_max + 1), bool)  # 方形结构元近似门宽
+            eroded = ndi.binary_erosion(fm_bool, structure=k)  # scipy 腐蚀切断窄通道
+            labels, n = ndi.label(eroded)  # 连通域标记
+            labels = labels.astype(np.int32)
+            # 膨胀回去
+            out = np.zeros_like(labels, dtype=np.int32)
+            for lid in range(1, n + 1):
+                dm = ndi.binary_dilation(labels == lid, structure=k)
+                out[dm] = lid
+            labels = out
         else:
+            logger.warning("cv2/skimage/scipy 均不可用，房间分割退化，狭窄通道无法切断")  # 警告缺少依赖
             # 退化：直接连通域（不做门洞切割）
             labels = self._label_cc(fm)
 
