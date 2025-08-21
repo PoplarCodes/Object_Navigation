@@ -166,12 +166,12 @@ def get_args():
     parser.add_argument('--default_type_logits', type=float, nargs=7,
                         default=[0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1],
                         help='无对象证据时的7维房型默认分布')
-    parser.add_argument('--min_goal_hold_steps', type=int, default=3,
-                        help='长期目标至少保持的最小步数')
     parser.add_argument('--goal_switch_ratio', type=float, default=1.2,
                         help='新房间概率需超过当前房间的倍数阈值才切换')
-    parser.add_argument('--min_goal_hold_steps', type=int, default=5,
+    parser.add_argument('--min_goal_hold_steps', type=int, default=10,
                         help='在达到该步数前若优势不明显则保持旧目标')
+    parser.add_argument('--frontier_band_radius_m', type=float, default=0.4,
+                        help='房间采样时前沿带膨胀半径（米）')
 
     #添加参数来指定目标类别
     # parser.add_argument('--target_goal', type=int, default=0,

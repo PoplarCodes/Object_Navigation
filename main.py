@@ -21,7 +21,8 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
                         fallback_goal, last_room_id: int, hold_steps: int,
-                        min_hold_steps: int, switch_ratio: float, topk: int):
+                        min_hold_steps: int, switch_ratio: float, topk: int,
+                        band_radius_m: float):
     """依据房间先验、前沿与持有策略选择长期目标点。
     参数:
         prior:         归一化先验热力图
@@ -33,6 +34,7 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
         min_hold_steps:在此步数前若新房间优势不明显则保持旧房间
         switch_ratio:  新房间权重需超过旧房间的倍数阈值
         topk:          仅考虑概率最高的前 k 个房间，0 表示全部
+                band_radius_m: 膨胀半径（米），用于在房间边界附近寻找前沿
 
     返回:
         (x, y), 选定房间编号, 更新后的 hold_steps
@@ -72,14 +74,22 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
 
     mask = room_infer_obj.rooms[chosen_rid].pixels
 
-    # 对选定房间做小半径膨胀，获得靠近门口的带状区域
-    dilated = binary_dilation(mask, disk(3))
+    # 根据输入半径换算像素，膨胀房间以覆盖门口附近的前沿
+    dil_px = max(int(band_radius_m / room_infer_obj.cfg.resolution_m), 1)
+    dilated = binary_dilation(mask, disk(dil_px))
     band_frontier = frontier & dilated
 
     if band_frontier.sum() > 0:
-        # 若膨胀带与前沿有交集，则在其中随机挑选一点作为目标
-        coords = np.argwhere(band_frontier)
-        y, x = coords[np.random.choice(len(coords))]
+        # 在膨胀带与前沿的交集内按先验权重进行随机采样
+        weights = prior[band_frontier]
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+            coords = np.argwhere(band_frontier)
+            idx = np.random.choice(len(coords), p=weights)
+            y, x = coords[idx]
+        else:
+            coords = np.argwhere(band_frontier)
+            y, x = coords[np.random.choice(len(coords))]
     else:
         # 否则回退到房间内部的最大值或质心
         sub_prior = prior * mask
@@ -453,7 +463,8 @@ def main():
                                         last_room_ids[e], goal_hold_steps[e],
                                         args.min_goal_hold_steps,
                                         args.goal_switch_ratio,
-                                        args.room_prior_topk)
+                                        args.room_prior_topk,
+                                        args.frontier_band_radius_m)
             else:
                 gx, gy = fallback
             goal_maps[e][:, :] = 0
@@ -697,7 +708,8 @@ def main():
                                             last_room_ids[e], goal_hold_steps[e],
                                             args.min_goal_hold_steps,
                                             args.goal_switch_ratio,
-                                            args.room_prior_topk)
+                                            args.room_prior_topk,
+                                            args.frontier_band_radius_m)
                 else:
                     gx, gy = fallback
                 goal_maps[e][:, :] = 0
