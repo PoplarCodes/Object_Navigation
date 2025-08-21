@@ -19,19 +19,20 @@ from room_prior import build_online_room_infer_from_args  # 引入房间先验�
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
-
-def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal,
-                        last_room_id: int, hold_steps: int,
-                        min_hold_steps: int, switch_ratio: float):
-    """依据房间先验与持有策略选择长期目标点。
+def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
+                        fallback_goal, last_room_id: int, hold_steps: int,
+                        min_hold_steps: int, switch_ratio: float, topk: int):
+    """依据房间先验、前沿与持有策略选择长期目标点。
     参数:
-        prior:       归一化先验热力图
-        room_infer_obj: 房间推理器对象，提供房间像素集合
-        fallback_goal:  无法使用房间信息时回退的目标
-        last_room_id:   上一次选择的房间编号，-1 表示无
-        hold_steps:     当前房间已持续的步数
-        min_hold_steps: 在此步数前若新房间优势不明显则保持旧房间
-        switch_ratio:   新房间权重需超过旧房间的倍数阈值
+        prior:         归一化先验热力图
+        frontier:      当前的前沿掩码
+        room_infer_obj:房间推理器对象，提供房间像素集合
+        fallback_goal: 无法使用房间信息时回退的目标
+        last_room_id:  上一次选择的房间编号，-1 表示无
+        hold_steps:    当前房间已持续的步数
+        min_hold_steps:在此步数前若新房间优势不明显则保持旧房间
+        switch_ratio:  新房间权重需超过旧房间的倍数阈值
+        topk:          仅考虑概率最高的前 k 个房间，0 表示全部
 
     返回:
         (x, y), 选定房间编号, 更新后的 hold_steps
@@ -43,6 +44,13 @@ def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal,
     room_probs = np.array([
         prior[r.pixels].sum() for r in room_infer_obj.rooms
     ], dtype=np.float32)
+
+    # 仅保留概率最高的 topk 个房间，其余权重置零
+    if topk > 0 and len(room_probs) > topk:
+        top_idx = np.argsort(room_probs)[::-1][:topk]
+        mask_topk = np.zeros_like(room_probs)
+        mask_topk[top_idx] = 1
+        room_probs = room_probs * mask_topk
 
     total = float(room_probs.sum())
     if total <= 0:
@@ -63,16 +71,25 @@ def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal,
             hold_steps = 0  # 触发切换，重置计数
 
     mask = room_infer_obj.rooms[chosen_rid].pixels
-    sub_prior = prior * mask
-    if sub_prior.sum() > 0:
-        # 在房间内取最大值像素作为目标，优先靠近前沿
-        y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
+
+    # 对选定房间做小半径膨胀，获得靠近门口的带状区域
+    dilated = binary_dilation(mask, disk(3))
+    band_frontier = frontier & dilated
+
+    if band_frontier.sum() > 0:
+        # 若膨胀带与前沿有交集，则在其中随机挑选一点作为目标
+        coords = np.argwhere(band_frontier)
+        y, x = coords[np.random.choice(len(coords))]
     else:
-        # 若先验在房间内质量为0，退化为质心
-        coords = np.argwhere(mask)
-        if coords.size == 0:
-            return fallback_goal, chosen_rid, hold_steps
-        y, x = coords.mean(axis=0).astype(int)
+        # 否则回退到房间内部的最大值或质心
+        sub_prior = prior * mask
+        if sub_prior.sum() > 0:
+            y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
+        else:
+            coords = np.argwhere(mask)
+            if coords.size == 0:
+                return fallback_goal, chosen_rid, hold_steps
+            y, x = coords.mean(axis=0).astype(int)
 
     return (int(x), int(y)), chosen_rid, hold_steps
 
@@ -422,10 +439,6 @@ def main():
             free = (local_map[e, 0].cpu().numpy() == 0)
             explored = (local_map[e, 1].cpu().numpy() > 0)
             frontier = free & binary_dilation(explored, disk(1)) & (~explored)
-            prior_frontier = prior * frontier
-            mass = prior_frontier.sum()
-            if mass > 0:
-                prior = prior_frontier / mass  # 与前沿相乘并归一化
 
             # 先对全局策略输出加入扰动，作为像素级采样的后备方案
             gx, gy = global_goals[e]
@@ -436,10 +449,11 @@ def main():
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                 # 房间级采样：考虑房间持有策略与前沿
                 (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
-                    sample_goal_by_room(prior, room_infer[e], fallback,
+                    sample_goal_by_room(prior, frontier, room_infer[e], fallback,
                                         last_room_ids[e], goal_hold_steps[e],
                                         args.min_goal_hold_steps,
-                                        args.goal_switch_ratio)
+                                        args.goal_switch_ratio,
+                                        args.room_prior_topk)
             else:
                 gx, gy = fallback
             goal_maps[e][:, :] = 0
@@ -511,6 +525,9 @@ def main():
                 wait_env[e] = 1.
                 update_intrinsic_rew(e)
                 init_map_and_pose_for_env(e)
+                # 重置房间持有状态，避免跨 episode 影响
+                last_room_ids[e] = -1
+                goal_hold_steps[e] = 0
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -663,14 +680,10 @@ def main():
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
                 np.save(f'tmp/room_map/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
 
-                # 计算前沿并与先验相乘，鼓励向未探索区域前进
+                # 计算前沿掩码，鼓励向未探索区域前进
                 free = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 frontier = free & binary_dilation(explored, disk(1)) & (~explored)
-                prior_frontier = prior * frontier
-                mass = prior_frontier.sum()
-                if mass > 0:
-                    prior = prior_frontier / mass
 
                 # 预先对全局策略输出加入扰动，作为像素级采样的后备方案
                 gx, gy = global_goals[e]
@@ -680,10 +693,11 @@ def main():
                 fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                     (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
-                        sample_goal_by_room(prior, room_infer[e], fallback,
+                        sample_goal_by_room(prior, frontier, room_infer[e], fallback,
                                             last_room_ids[e], goal_hold_steps[e],
                                             args.min_goal_hold_steps,
-                                            args.goal_switch_ratio)
+                                            args.goal_switch_ratio,
+                                            args.room_prior_topk)
                 else:
                     gx, gy = fallback
                 goal_maps[e][:, :] = 0
