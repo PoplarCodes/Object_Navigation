@@ -242,13 +242,16 @@ class OnlineRoomInfer:
             })
 
             # ----------- 循环结束后统一写入 Episode 缓存，避免同一步多次写入 -----------
-            if json_rooms:
-                buf = self._episode_buffers.setdefault(env_id, [])
-                cur_step = int(step)
-                # 若与上一次写入的 step 相同，则跳过，防止重复记录
-                if self._last_step_dumped.get(env_id) != cur_step:
-                    buf.append({
-                        "step": cur_step,
+            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
+            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
+            # ----------- 循环结束后统一写入 Episode 缓存，确保每个 step 只写一次 -----------
+        if json_rooms:
+            buf = self._episode_buffers.setdefault(env_id, [])
+            cur_step = int(step)
+            # 若与上一次写入的 step 相同，则跳过，防止重复记录
+            if self._last_step_dumped.get(env_id) != cur_step:
+                buf.append({
+                     "step": cur_step,
                     "rooms": json_rooms,
                 })
                 # 记录最新写入的 step
