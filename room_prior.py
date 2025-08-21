@@ -29,7 +29,7 @@ OnlineRoomInfer: 在线启发式房间分割 + 房型（Room Type）投票
 import json  # 引入 json 将打分结果写入文件
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import os  # 引入 os 以保存房型概率供可视化
 import logging  # 引入 logging 用于输出警告
 try:
@@ -108,6 +108,8 @@ class OnlineRoomInfer:
         # 归一化对象→房型先验
         row_sum = _OBJ2ROOM.sum(axis=1, keepdims=True) + 1e-6
         self.obj2room = _OBJ2ROOM / row_sum
+        # Episode 级房型概率缓存
+        self._room_prob_buffers: Dict[int, List[Dict[str, Any]]] = {}
         # Episode 缓冲：按环境记录当前 Episode 的打分链路
         self._episode_buffers: Dict[int, List[Dict]] = {}
         # Episode 计数：用于输出文件命名
@@ -131,8 +133,10 @@ class OnlineRoomInfer:
             # 第一次见到该环境，初始化缓存与计数
             self._episode_buffers[env_id] = []
             self._episode_ids[env_id] = 0
+            self._room_prob_buffers[env_id] = []
         elif step == 0:
-            # 新 Episode，写出旧 Episode 的 JSON
+            # 新 Episode，写出上一 Episode 的概率序列与打分链路
+            self._flush_room_probs(env_id)
             self._flush_episode_json(env_id)
 
         H, W = traversible.shape
@@ -257,16 +261,38 @@ class OnlineRoomInfer:
                 # 记录最新写入的 step
                 self._last_step_dumped[env_id] = cur_step
 
-        # 保存房型概率供可视化
+        # 保存房间分割结果并缓存房型概率
         if len(self.rooms) > 0:
             type_probs_all = np.stack([r.type_probs for r in self.rooms], axis=0)
+            # 缓存当前步的房型概率供 Episode 结束时统一写盘
+            self._room_prob_buffers.setdefault(env_id, []).append({"step": int(step), "probs": type_probs_all})
             os.makedirs('tmp/room_map', exist_ok=True)
-            np.save(f'tmp/room_map/room_probs_env{env_id}_step{step}.npy', type_probs_all)
             np.save(f'tmp/room_map/room_map_env{env_id}_step{step}.npy', self.room_id_map)
 
     def dump_episode_json(self, env_id: int) -> None:
         """主动将某环境当前 Episode 的缓存写入 JSON 文件。"""
+        self._flush_room_probs(env_id)  # 先写出房型概率序列
         self._flush_episode_json(env_id)
+
+    def _flush_room_probs(self, env_id: int) -> None:
+        """内部工具：写出某环境缓存的房型概率并清空。"""
+        buf = self._room_prob_buffers.get(env_id, [])
+        if not buf:
+            return  # 缓存为空直接返回
+        ep = self._episode_ids.get(env_id, 0)  # 当前 Episode 编号
+        base = os.path.join(
+            "tmp",
+            "room_map",
+            os.path.basename(self.dump_dir),
+            f"thread_{env_id}",
+            f"eps_{ep}",
+        )  # 构建输出目录
+        os.makedirs(base, exist_ok=True)  # 确保目录存在
+        steps = np.array([b["step"] for b in buf])  # 收集步骤序列
+        probs = np.stack([b["probs"] for b in buf], axis=0)  # 堆叠概率数组
+        np.savez(os.path.join(base, "room_probs.npz"), steps=steps, probs=probs)  # 写入 npz
+        self._room_prob_buffers[env_id] = []  # 清空缓存
+
 
     def _flush_episode_json(self, env_id: int) -> None:
         """内部工具：按Episode存盘并清空缓存。
