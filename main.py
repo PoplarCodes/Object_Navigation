@@ -14,45 +14,67 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
+from skimage.morphology import binary_dilation, disk  # 形态学操作用于前沿提取
 from room_prior import build_online_room_infer_from_args  # 引入房间先验推理器构建函数
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
-def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal):
-    """根据房间先验在房间级别采样长期目标。
+def sample_goal_by_room(prior: np.ndarray, room_infer_obj, fallback_goal,
+                        last_room_id: int, hold_steps: int,
+                        min_hold_steps: int, switch_ratio: float):
+    """依据房间先验与持有策略选择长期目标点。
+    参数:
+        prior:       归一化先验热力图
+        room_infer_obj: 房间推理器对象，提供房间像素集合
+        fallback_goal:  无法使用房间信息时回退的目标
+        last_room_id:   上一次选择的房间编号，-1 表示无
+        hold_steps:     当前房间已持续的步数
+        min_hold_steps: 在此步数前若新房间优势不明显则保持旧房间
+        switch_ratio:   新房间权重需超过旧房间的倍数阈值
 
-    优点：先在房间层面聚合概率，降低单个像素噪声的影响，使目标更稳定且符合语义结构。
-    当房间分割缺失或概率无效时，退化为像素级采样的后备策略。
+    返回:
+        (x, y), 选定房间编号, 更新后的 hold_steps
     """
-    # 房间信息缺失直接返回后备目标
     if room_infer_obj is None or len(room_infer_obj.rooms) == 0:
-        return fallback_goal
+        return fallback_goal, last_room_id, hold_steps
 
-    # 计算每个房间在先验中的概率总和
+    # 计算各房间的累计概率作为权重
     room_probs = np.array([
         prior[r.pixels].sum() for r in room_infer_obj.rooms
     ], dtype=np.float32)
 
     total = float(room_probs.sum())
     if total <= 0:
-        # 概率无效时回退到像素级采样
-        return fallback_goal
+        return fallback_goal, last_room_id, hold_steps
 
-    room_probs /= total
+    # 选择概率最大的房间作为候选
+    best_rid = int(room_probs.argmax())
+    chosen_rid = best_rid
 
-    # 按房间概率选择目标房间
-    rid = int(np.random.choice(len(room_infer_obj.rooms), p=room_probs))
-    mask = room_infer_obj.rooms[rid].pixels
+    # 判断是否需要切换房间
+    if last_room_id is not None and last_room_id >= 0 and last_room_id < len(room_probs):
+        cur_w = room_probs[last_room_id]
+        new_w = room_probs[best_rid]
+        if best_rid != last_room_id and new_w <= cur_w * switch_ratio \
+                and hold_steps < min_hold_steps:
+            chosen_rid = last_room_id  # 持有旧房间
+        else:
+            hold_steps = 0  # 触发切换，重置计数
 
-    coords = np.argwhere(mask)
-    if coords.size == 0:
-        # 极端情况下房间没有像素，同样回退
-        return fallback_goal
+    mask = room_infer_obj.rooms[chosen_rid].pixels
+    sub_prior = prior * mask
+    if sub_prior.sum() > 0:
+        # 在房间内取最大值像素作为目标，优先靠近前沿
+        y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
+    else:
+        # 若先验在房间内质量为0，退化为质心
+        coords = np.argwhere(mask)
+        if coords.size == 0:
+            return fallback_goal, chosen_rid, hold_steps
+        y, x = coords.mean(axis=0).astype(int)
 
-    # 取房间像素的质心作为目标点
-    cy, cx = coords.mean(axis=0).astype(int)
-    return int(cx), int(cy)
+    return (int(x), int(y)), chosen_rid, hold_steps
 
 
 def main():
@@ -117,6 +139,10 @@ def main():
     g_dist_entropies = deque(maxlen=1000)
 
     per_step_g_rewards = deque(maxlen=1000)
+
+    # 记录长期目标所选房间及其持续步数
+    last_room_ids = [-1 for _ in range(num_scenes)]  # 上一次的房间编号
+    goal_hold_steps = [0 for _ in range(num_scenes)]  # 当前房间已持有的步数
 
     g_process_rewards = np.zeros((num_scenes))
 
@@ -391,6 +417,16 @@ def main():
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
             np.save(f'tmp/room_map/room_prior_env{e}_step0.npy', prior)  # 保存先验热力图以检查房型推理效果
+
+            # 计算前沿掩码：free & dilate(explored) & ~explored
+            free = (local_map[e, 0].cpu().numpy() == 0)
+            explored = (local_map[e, 1].cpu().numpy() > 0)
+            frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+            prior_frontier = prior * frontier
+            mass = prior_frontier.sum()
+            if mass > 0:
+                prior = prior_frontier / mass  # 与前沿相乘并归一化
+
             # 先对全局策略输出加入扰动，作为像素级采样的后备方案
             gx, gy = global_goals[e]
             shift = np.random.randint(-1, 2, size=2)
@@ -398,13 +434,17 @@ def main():
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
             fallback = (gx, gy)
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                # 房间级采样：按房间概率选择目标房间，再取质心
-                gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
+                # 房间级采样：考虑房间持有策略与前沿
+                (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
+                    sample_goal_by_room(prior, room_infer[e], fallback,
+                                        last_room_ids[e], goal_hold_steps[e],
+                                        args.min_goal_hold_steps,
+                                        args.goal_switch_ratio)
             else:
-                # 当房间分割不可用或先验无效时，退化为像素级采样
                 gx, gy = fallback
             goal_maps[e][:, :] = 0
             goal_maps[e][gx, gy] = 1
+            goal_hold_steps[e] += 1
         else:
             gx, gy = global_goals[e]
             # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
@@ -622,6 +662,16 @@ def main():
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
                 np.save(f'tmp/room_map/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
+
+                # 计算前沿并与先验相乘，鼓励向未探索区域前进
+                free = (local_map[e, 0].cpu().numpy() == 0)
+                explored = (local_map[e, 1].cpu().numpy() > 0)
+                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+                prior_frontier = prior * frontier
+                mass = prior_frontier.sum()
+                if mass > 0:
+                    prior = prior_frontier / mass
+
                 # 预先对全局策略输出加入扰动，作为像素级采样的后备方案
                 gx, gy = global_goals[e]
                 shift = np.random.randint(-1, 2, size=2)
@@ -629,13 +679,16 @@ def main():
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
                 fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                    # 房间级采样：基于房间概率选择目标房间，并取质心作为目标
-                    gx, gy = sample_goal_by_room(prior, room_infer[e], fallback)
+                    (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
+                        sample_goal_by_room(prior, room_infer[e], fallback,
+                                            last_room_ids[e], goal_hold_steps[e],
+                                            args.min_goal_hold_steps,
+                                            args.goal_switch_ratio)
                 else:
-                    # 房间分割不可用时，退化为像素级采样
                     gx, gy = fallback
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gx, gy] = 1
+                goal_hold_steps[e] += 1
             else:
                 gx, gy = global_goals[e]
                 # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
