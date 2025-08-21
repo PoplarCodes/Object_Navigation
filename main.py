@@ -861,6 +861,9 @@ def main():
                            os.path.join(dump_dir,
                                         "periodic_{}.pth".format(total_steps)))
         # ------------------------------------------------------------------
+    # 遍历所有房间推理器实例，写出剩余缓存，防止最后一个 Episode 丢失
+    for e in range(num_scenes):
+        room_infer[e].dump_episode_json(e)  # 写出剩余缓存
 
     # Print and save model performance numbers during evaluation
     if args.eval:
