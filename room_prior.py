@@ -99,9 +99,10 @@ class RoomInfo:
 
 
 class OnlineRoomInfer:
-    def __init__(self, cfg: RoomCfg, n_obj_classes: int = 15):
+    def __init__(self, cfg: RoomCfg, n_obj_classes: int = 15, dump_dir: str = "tmp"):
         self.cfg = cfg
         self.n_obj = n_obj_classes
+        self.dump_dir = dump_dir  # 数据输出的根目录
         self.room_id_map: Optional[np.ndarray] = None   # int32 [H,W]
         self.rooms: List[RoomInfo] = []
         # 归一化对象→房型先验
@@ -237,7 +238,8 @@ class OnlineRoomInfer:
                 "type_probs": type_probs.tolist(),
             })
 
-            # 若有房间信息，将本步结果加入 Episode 缓存，稍后统一写入
+            # 循环结束后统一写入 Episode 缓存，避免在房间循环中重复写入
+            # 这样每个 step 只追加一次缓存，防止重复记录
             if json_rooms:
                 self._episode_buffers[env_id].append({
                     "step": int(step),
@@ -256,14 +258,18 @@ class OnlineRoomInfer:
         self._flush_episode_json(env_id)
 
     def _flush_episode_json(self, env_id: int) -> None:
-        """内部工具：把缓存写入 tmp/obj_romm 并清空。"""
+        """内部工具：按Episode存盘并清空缓存。
+        目录结构：<dump_dir>/episodes/eps_<ep>/env<env_id>.json
+        """
         buf = self._episode_buffers.get(env_id, [])
         if not buf:
             return
         ep = self._episode_ids.get(env_id, 0)
-        os.makedirs('tmp/obj_romm', exist_ok=True)
-        with open(f'tmp/obj_romm/obj_room_env{env_id}_ep{ep}.json', 'w', encoding='utf-8') as f:
-            json.dump(buf, f, ensure_ascii=False, indent=2)
+        base = os.path.join(self.dump_dir, "episodes", f"eps_{ep}")  # 每个Episode单独目录
+        os.makedirs(base, exist_ok=True)  # 若目录不存在则创建
+        path = os.path.join(base, f"env{env_id}.json")  # 按环境区分文件
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(buf, f, ensure_ascii=False, indent=2)  # 写入Episode数据
         self._episode_buffers[env_id] = []
         self._episode_ids[env_id] = ep + 1
 
@@ -468,4 +474,5 @@ def build_online_room_infer_from_args(args, n_obj_classes: int = 15) -> OnlineRo
             [0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1]
         )),  # 可选指定默认房型分布
     )
-    return OnlineRoomInfer(cfg, n_obj_classes=n_obj_classes)
+    dump_dir = os.path.join(args.dump_location, "dump", args.exp_name)  # 构造保存目录
+    return OnlineRoomInfer(cfg, n_obj_classes=n_obj_classes, dump_dir=dump_dir)
