@@ -527,5 +527,9 @@ def build_online_room_infer_from_args(args, n_obj_classes: int = 15) -> OnlineRo
             [0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1]
         )),  # 可选指定默认房型分布
     )
-    dump_dir = os.path.join(args.dump_location, "dump", args.exp_name)  # 构造保存目录
+    dump_dir = getattr(
+        args,
+        'dump_dir',
+        os.path.join(args.dump_location, "dump", args.exp_name)
+    )  # 优先使用自定义 dump_dir，确保与图像保存路径一致
     return OnlineRoomInfer(cfg, n_obj_classes=n_obj_classes, dump_dir=dump_dir)

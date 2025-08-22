@@ -344,8 +344,11 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
     def _visualize(self, inputs):
         args = self.args
-        dump_dir = "{}/dump/{}/".format(args.dump_location,
-                                        args.exp_name)
+        dump_dir = getattr(
+            args,
+            'dump_dir',
+            "{}/dump/{}/".format(args.dump_location, args.exp_name)
+        )  # 允许自定义 dump_dir，保持与房型推理输出一致
         ep_dir = '{}/episodes/thread_{}/eps_{}/'.format(
             dump_dir, self.rank, self.episode_no)
         if not os.path.exists(ep_dir):
