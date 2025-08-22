@@ -350,7 +350,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             "{}/dump/{}/".format(args.dump_location, args.exp_name)
         )  # 允许自定义 dump_dir，保持与房型推理输出一致
         ep_dir = '{}/episodes/thread_{}/eps_{}/'.format(
-            dump_dir, self.rank, self.episode_no + 1)  # Episode编号从1开始
+            dump_dir, self.rank, self.episode_no)  # Episode编号无需再偏移
         if not os.path.exists(ep_dir):
             os.makedirs(ep_dir)
 
@@ -422,8 +422,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
         if args.print_images:
             fn = '{}/episodes/thread_{}/eps_{}/{}-{}-Vis-{}.png'.format(
-                dump_dir, self.rank, self.episode_no + 1,
-                self.rank, self.episode_no + 1, self.timestep)  # Episode编号从1开始
+                dump_dir, self.rank, self.episode_no,
+                self.rank, self.episode_no, self.timestep)  # Episode编号无需再偏移
             cv2.imwrite(fn, self.vis_image)
 
 
