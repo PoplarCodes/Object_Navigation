@@ -407,8 +407,9 @@ def main():
         sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
         explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
         room_infer[e].update(traversible, explored, sem_probs,
-                             env_id=e, step=0,
-                             explored_ratio_map=explored_ratio_map)  # 携带环境和步骤编号，保存房型概率供可视化
+                             env_id=e,
+                             env_step=int(infos[e]['time']),
+                             explored_ratio_map=explored_ratio_map)  # 使用环境时间步记录，保存房型概率供可视化
 
     extras = torch.zeros(num_scenes, 2)
     extras[:, 0] = global_orientation[:, 0]
@@ -548,8 +549,9 @@ def main():
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
                 explored_ratio_map = local_map[e, 1].cpu().numpy()  # 当前探索比例图用于衰减
                 room_infer[e].update(traversible, explored, sem_probs,
-                                     env_id=e, step=0,
-                                     explored_ratio_map=explored_ratio_map)  # step=0表示新episode开始
+                                     env_id=e,
+                                     env_step=int(infos[e]['time']),
+                                     explored_ratio_map=explored_ratio_map)  # 使用环境时间步，0表示新episode开始
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -630,7 +632,8 @@ def main():
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
                 explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
                 room_infer[e].update(traversible, explored, sem_probs,
-                                     env_id=e, step=int(infos[e]['time']),
+                                     env_id=e,
+                                     env_step=int(infos[e]['time']),
                                      explored_ratio_map=explored_ratio_map)  # 使用环境返回的真实时间步，确保写盘编号正确
 
             # Get exploration reward and metrics

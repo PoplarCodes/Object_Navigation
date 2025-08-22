@@ -114,27 +114,27 @@ class OnlineRoomInfer:
         self._episode_buffers: Dict[int, List[Dict]] = {}
         # Episode 计数：用于输出文件命名
         self._episode_ids: Dict[int, int] = {}
-        # 记录每个环境上一次写入的 step，用于防止重复导出
-        self._last_step_dumped: Dict[int, int] = {}
+        # 记录每个环境上一次写入的环境步，用于防止重复导出
+        self._last_env_step_dumped: Dict[int, int] = {}
     # ------------------------- 对外主接口 -------------------------
     def update(self,
                traversible: np.ndarray,   # bool/0-1 可行走
                explored: np.ndarray,      # bool/0-1 已探索
                sem_probs: np.ndarray,     # float [15,H,W] 语义概率/置信度
                env_id: int = 0,  # 环境编号
-               step: int = 0,  # 全局步骤
+               env_step: int = 0,  # 环境时间步
                explored_ratio_map: Optional[np.ndarray] = None  # 0~1（可缺省）
                ) -> None:
         """基于当前栅格状态与语义置信度，更新房间分割与房型概率。
         注意：需保证输入尺寸一致，且与长期目标使用的坐标一致。
         """
-        # step 为 0 时意味着新的 Episode 开始，先将上一 Episode 的缓存写盘
+        # env_step 为 0 时意味着新的 Episode 开始，先将上一 Episode 的缓存写盘
         if env_id not in self._episode_buffers:
             # 第一次见到该环境，初始化缓存与计数
             self._episode_buffers[env_id] = []
             self._episode_ids[env_id] = 0
             self._room_prob_buffers[env_id] = []
-        elif step == 0:
+        elif env_step == 0:
             # 新 Episode，写出上一 Episode 的概率序列与打分链路
             self._flush_room_probs(env_id)
             self._flush_episode_json(env_id)
@@ -247,26 +247,26 @@ class OnlineRoomInfer:
 
         if json_rooms:
             buf = self._episode_buffers.setdefault(env_id, [])
-            cur_step = int(step)
-            # 若与上一次写入的 step 相同，则跳过，防止重复记录
-            if self._last_step_dumped.get(env_id) != cur_step:
+            cur_step = int(env_step)
+            # 若与上一次写入的环境步相同，则跳过，防止重复记录
+            if self._last_env_step_dumped.get(env_id) != cur_step:
                 buf.append({
                      "step": cur_step,
                     "rooms": json_rooms,
                 })
-                # 记录最新写入的 step
-                self._last_step_dumped[env_id] = cur_step
+                # 记录最新写入的环境步
+                self._last_env_step_dumped[env_id] = cur_step
 
         # 保存房间分割结果并缓存房型概率
         if len(self.rooms) > 0:
             type_probs_all = np.stack([r.type_probs for r in self.rooms], axis=0)
             # 缓存当前步的房型概率供 Episode 结束时统一写盘
-            self._room_prob_buffers.setdefault(env_id, []).append({"step": int(step), "probs": type_probs_all})
+            self._room_prob_buffers.setdefault(env_id, []).append({"env_step": int(env_step), "probs": type_probs_all})
             ep = self._episode_ids.get(env_id, 0)  # 当前Episode编号
-            # 目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_map_step<step>.npy
+            # 目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_map_step<env_step>.npy
             base = os.path.join(self.dump_dir, "room_map", f"thread_{env_id}", f"eps_{ep}")
             os.makedirs(base, exist_ok=True)  # 递归创建目录
-            np.save(os.path.join(base, f"room_map_step{step}.npy"), self.room_id_map)
+            np.save(os.path.join(base, f"room_map_step{env_step}.npy"), self.room_id_map)
 
     def dump_episode_json(self, env_id: int) -> None:
         """主动将某环境当前 Episode 的缓存写入 JSON 文件。"""
@@ -289,7 +289,7 @@ class OnlineRoomInfer:
             f"eps_{ep}",
         )  # 构建输出目录
         os.makedirs(base, exist_ok=True)  # 确保目录存在
-        steps = np.array([b["step"] for b in buf])  # 收集步骤序列
+        env_steps = np.array([b["env_step"] for b in buf])  # 收集环境步序列
         # 各步的房型概率矩阵可能因房间数不同而形状不一，需先统一尺寸
         probs_list = [b["probs"] for b in buf]  # 提取概率矩阵列表
         # 计算所有矩阵在各维度上的最大形状
@@ -300,7 +300,7 @@ class OnlineRoomInfer:
             pad_width = [(0, max_shape[i] - p.shape[i]) for i in range(len(max_shape))]
             padded.append(np.pad(p, pad_width, mode="constant"))
         probs = np.stack(padded, axis=0)  # 统一形状后堆叠概率数组
-        np.savez(os.path.join(base, "room_probs.npz"), steps=steps, probs=probs)  # 写入 npz
+        np.savez(os.path.join(base, "room_probs.npz"), env_steps=env_steps, probs=probs)  # 写入 npz
         self._room_prob_buffers[env_id] = []  # 清空缓存
 
 
@@ -324,9 +324,9 @@ class OnlineRoomInfer:
             json.dump(buf, f, ensure_ascii=False, indent=2)  # 写入Episode数据
         self._episode_buffers[env_id] = []  # 清空当前线程缓存
         self._episode_ids[env_id] = ep + 1  # Episode计数递增
-        # 清除最近 step 记录，确保新 Episode 可从 step0 重新计数
-        if env_id in self._last_step_dumped:
-            del self._last_step_dumped[env_id]
+        # 清除最近环境步记录，确保新 Episode 可从 env_step0 重新计数
+        if env_id in self._last_env_step_dumped:
+            del self._last_env_step_dumped[env_id]
 
     def build_goal_prior(self, target_obj_id: int) -> np.ndarray:
         """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化。
