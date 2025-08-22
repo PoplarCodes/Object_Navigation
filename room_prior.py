@@ -134,7 +134,8 @@ class OnlineRoomInfer:
             self._episode_buffers[env_id] = []
             self._episode_ids[env_id] = 0
             self._room_prob_buffers[env_id] = []
-        elif env_step == 0:
+        # 仅当上一环境步大于 0（表示真正经历过上一 Episode）时才刷新缓存，避免重复写入
+        elif env_step == 0 and self._last_env_step_dumped.get(env_id, 0) != 0:
             # 新 Episode，写出上一 Episode 的概率序列与打分链路
             self._flush_room_probs(env_id)
             self._flush_episode_json(env_id)
