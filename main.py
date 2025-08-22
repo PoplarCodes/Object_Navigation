@@ -492,6 +492,8 @@ def main():
         p_input['new_goal'] = False  # 初始化时不触发新目标
         p_input['found_goal'] = found_goal[e]
         p_input['wait'] = wait_env[e] or finished[e]
+        # 将房型推理器传入环境，便于在可视化阶段更新房间信息
+        p_input['room_infer'] = room_infer[e]
         if args.visualize or args.print_images:
             local_map[e, -1, :, :] = 1e-5
             p_input['sem_map_pred'] = local_map[e, 4:, :, :].argmax(0).cpu().numpy()

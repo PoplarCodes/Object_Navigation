@@ -356,7 +356,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = inputs['pose_pred']
 
         goal = inputs['goal']
-        sem_map = inputs['sem_map_pred']
+        sem_map_raw = inputs['sem_map_pred']  # 原始语义预测结果
+        sem_map = sem_map_raw.copy()  # 拷贝一份用于可视化绘制
 
         gx1, gx2, gy1, gy2 = int(gx1), int(gx2), int(gy1), int(gy2)
 
@@ -421,3 +422,19 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 dump_dir, self.rank, self.episode_no,
                 self.rank, self.episode_no, self.timestep)
             cv2.imwrite(fn, self.vis_image)
+
+
+            # 获取当前环境步并更新房型推理器，保存房间推理相关结果
+            env_step = int(self.timestep)
+            room_infer = inputs.get('room_infer')
+            if room_infer is not None:
+                # 构造可行走、已探索与语义概率地图
+                traversible = (np.rint(map_pred) == 1)
+                explored = (np.rint(exp_pred) == 1)
+                sem_probs = np.zeros((args.num_sem_categories,
+                                      sem_map_raw.shape[0],
+                                      sem_map_raw.shape[1]), dtype=np.float32)
+                for c in range(args.num_sem_categories):
+                    sem_probs[c][sem_map_raw == c] = 1.0
+                room_infer.update(traversible, explored, sem_probs,
+                                  env_id=self.rank, env_step=env_step)
