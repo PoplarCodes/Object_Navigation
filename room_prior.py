@@ -290,7 +290,16 @@ class OnlineRoomInfer:
         )  # 构建输出目录
         os.makedirs(base, exist_ok=True)  # 确保目录存在
         steps = np.array([b["step"] for b in buf])  # 收集步骤序列
-        probs = np.stack([b["probs"] for b in buf], axis=0)  # 堆叠概率数组
+        # 各步的房型概率矩阵可能因房间数不同而形状不一，需先统一尺寸
+        probs_list = [b["probs"] for b in buf]  # 提取概率矩阵列表
+        # 计算所有矩阵在各维度上的最大形状
+        max_shape = np.max([p.shape for p in probs_list], axis=0)
+        padded = []
+        for p in probs_list:
+            # 按最大形状在缺失维度补零，确保可堆叠
+            pad_width = [(0, max_shape[i] - p.shape[i]) for i in range(len(max_shape))]
+            padded.append(np.pad(p, pad_width, mode="constant"))
+        probs = np.stack(padded, axis=0)  # 统一形状后堆叠概率数组
         np.savez(os.path.join(base, "room_probs.npz"), steps=steps, probs=probs)  # 写入 npz
         self._room_prob_buffers[env_id] = []  # 清空缓存
 
