@@ -259,8 +259,8 @@ class OnlineRoomInfer:
             # 缓存当前步的房型概率供 Episode 结束时统一写盘
             self._room_prob_buffers.setdefault(env_id, []).append({"env_step": int(env_step), "probs": type_probs_all})
             ep = self._episode_ids.get(env_id, 0)  # 当前Episode编号
-            # 目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_map_step<env_step>.npy
-            base = os.path.join(self.dump_dir, "room_map", f"thread_{env_id}", f"eps_{ep}")
+            # 目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep+1>/room_map_step<env_step>.npy
+            base = os.path.join(self.dump_dir, "room_map", f"thread_{env_id}", f"eps_{ep + 1}")  # Episode编号从1开始
             os.makedirs(base, exist_ok=True)  # 递归创建目录
             np.save(os.path.join(base, f"room_map_step{env_step}.npy"), self.room_id_map)
 
@@ -271,7 +271,7 @@ class OnlineRoomInfer:
 
     def _flush_room_probs(self, env_id: int) -> None:
         """内部工具：写出某环境缓存的房型概率并清空。
-        目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep>/room_probs.npz
+        目录结构：<dump_dir>/room_map/thread_<env_id>/eps_<ep+1>/room_probs.npz
         """
         buf = self._room_prob_buffers.get(env_id, [])
         if not buf:
@@ -282,8 +282,8 @@ class OnlineRoomInfer:
             "room_map",
             os.path.basename(self.dump_dir),
             f"thread_{env_id}",
-            f"eps_{ep}",
-        )  # 构建输出目录
+            f"eps_{ep + 1}",
+        )  # 构建输出目录，Episode编号从1开始
         os.makedirs(base, exist_ok=True)  # 确保目录存在
         env_steps = np.array([b["env_step"] for b in buf])  # 收集环境步序列
         # 各步的房型概率矩阵可能因房间数不同而形状不一，需先统一尺寸
@@ -302,7 +302,7 @@ class OnlineRoomInfer:
 
     def _flush_episode_json(self, env_id: int) -> None:
         """内部工具：按Episode存盘并清空缓存。
-        目录结构：<dump_dir>/episodes/thread_<env_id>/eps_<ep>/room_scores.json
+        目录结构：<dump_dir>/episodes/thread_<env_id>/eps_<ep+1>/room_scores.json
         """
         buf = self._episode_buffers.get(env_id, [])
         if not buf:
@@ -312,8 +312,8 @@ class OnlineRoomInfer:
             self.dump_dir,
             "episodes",
             f"thread_{env_id}",
-            f"eps_{ep}",
-        )  # 按线程和Episode组织目录
+            f"eps_{ep + 1}",
+        )  # 按线程和Episode组织目录，Episode编号从1开始
         os.makedirs(base, exist_ok=True)  # 递归创建目录
         path = os.path.join(base, "room_scores.json")  # 固定文件名存储房间得分
         with open(path, 'w', encoding='utf-8') as f:
