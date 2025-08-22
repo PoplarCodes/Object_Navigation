@@ -149,9 +149,9 @@ class OnlineRoomInfer:
 
         # 2) 统计各房间的对象证据
         self.rooms = []
-        n_rooms = int(room_id_map.max())
-        if n_rooms == 0:
-            return
+        n_rooms = int(room_id_map.max())  # 当前房间数量
+        # 即使房间数为 0 也继续执行后续逻辑，以便记录 env_step=0 等步骤
+        # 因此不再在此提前返回
 
         # 预先把语义概率阈值化/平滑
         sem_soft = np.clip(sem_probs, 0.0, 1.0).astype(np.float32)
