@@ -241,17 +241,17 @@ class OnlineRoomInfer:
                 "type_probs": type_probs.tolist(),  # 房型概率分布
             })
 
-        if json_rooms:
-            buf = self._episode_buffers.setdefault(env_id, [])
-            cur_step = int(env_step)
-            # 若与上一次写入的环境步相同，则跳过，防止重复记录
-            if self._last_env_step_dumped.get(env_id) != cur_step:
-                buf.append({
-                    "env_step": cur_step,  # 记录当前环境步编号
-                    "rooms": json_rooms,  # 当前步的所有房间得分信息
-                })
-                # 记录最新写入的环境步
-                self._last_env_step_dumped[env_id] = cur_step
+        # 每个环境步都写入记录，即使没有房间也要保存
+        buf = self._episode_buffers.setdefault(env_id, [])
+        cur_step = int(env_step)
+        # 若与上一次写入的环境步相同，则跳过，防止重复记录
+        if self._last_env_step_dumped.get(env_id) != cur_step:
+            buf.append({
+                "env_step": cur_step,  # 记录当前环境步编号
+                "rooms": json_rooms,  # 当前步的所有房间得分信息
+            })  # 即使无房间也记录该环境步
+            # 记录最新写入的环境步
+            self._last_env_step_dumped[env_id] = cur_step
 
         # 保存房间分割结果并缓存房型概率
         if len(self.rooms) > 0:
