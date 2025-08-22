@@ -106,7 +106,7 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
 
 def main():
     args = get_args()
-    os.makedirs('tmp/room_map', exist_ok=True)  # 创建 tmp/room_map 目录，保存先验热力图以检查房型推理效果
+
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -122,6 +122,9 @@ def main():
         os.makedirs(log_dir)
     if not os.path.exists(dump_dir):
         os.makedirs(dump_dir)
+
+    room_prior_dir = os.path.join(dump_dir, "room_map")
+    os.makedirs(room_prior_dir, exist_ok=True)
 
     logging.basicConfig(
         filename=log_dir + 'train.log',
@@ -443,7 +446,7 @@ def main():
             found_goal[e] = 1
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
-            np.save(f'tmp/room_map/room_prior_env{e}_step0.npy', prior)  # 保存先验热力图以检查房型推理效果
+
 
             # 计算前沿掩码：free & dilate(explored) & ~explored
             free = (local_map[e, 0].cpu().numpy() == 0)
@@ -539,6 +542,14 @@ def main():
                 # 重置房间持有状态，避免跨 episode 影响
                 last_room_ids[e] = -1
                 goal_hold_steps[e] = 0
+                # 环境重置后立即调用房间推理器，写出上一轮数据并初始化新episode
+                traversible = (local_map[e, 0].cpu().numpy() == 0)
+                explored = (local_map[e, 1].cpu().numpy() > 0)
+                sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
+                explored_ratio_map = local_map[e, 1].cpu().numpy()  # 当前探索比例图用于衰减
+                room_infer[e].update(traversible, explored, sem_probs,
+                                     env_id=e, step=0,
+                                     explored_ratio_map=explored_ratio_map)  # step=0表示新episode开始
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -619,8 +630,8 @@ def main():
                 sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
                 explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
                 room_infer[e].update(traversible, explored, sem_probs,
-                                     env_id=e, step=g_step,
-                                     explored_ratio_map=explored_ratio_map)  # 携带环境和步骤编号，保存房型概率供可视化
+                                     env_id=e, step=int(infos[e]['time']),
+                                     explored_ratio_map=explored_ratio_map)  # 使用环境返回的真实时间步，确保写盘编号正确
 
             # Get exploration reward and metrics
             g_reward = torch.from_numpy(np.asarray(
@@ -689,7 +700,7 @@ def main():
                 found_goal[e] = 1
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
-                np.save(f'tmp/room_map/room_prior_env{e}_step{g_step}.npy', prior)  # 保存先验热力图以检查房型推理效果
+                # np.save(os.path.join(room_prior_dir, f'room_prior_env{e}_step{g_step}.npy'), prior)  # 保存先验热力图以检查房型推理效果
 
                 # 计算前沿掩码，鼓励向未探索区域前进
                 free = (local_map[e, 0].cpu().numpy() == 0)
