@@ -197,13 +197,11 @@ class OnlineRoomInfer:
                 if v > 0:
                     obj_hits[k] = v
 
-            # 3) 对象投票 → 房型概率，同时保存加权贡献
+            # 3) 对象投票 → 房型概率
             type_logits = np.zeros(7, dtype=np.float32)
-            weighted_contrib = {}  # 保存每个对象对各房型的加权贡献
             for k, v in obj_hits.items():
                 contrib = float(v) * self.obj2room[k]
-                type_logits += contrib
-                weighted_contrib[k] = contrib.tolist()
+                type_logits += contrib  # 累积对象证据转化的房型贡献
 
             # 4) 几何启发（走廊倾向）
             corr_boost = self._corridor_score(mask)
@@ -236,13 +234,11 @@ class OnlineRoomInfer:
                 explored_ratio=explored_ratio,
             ))
 
-            # 将当前房间的打分链路信息加入列表，用于后续写入 JSON
+            # 将当前房间的打分信息加入列表，用于后续写入 JSON
             json_rooms.append({
                 "room_id": rid,
-                "obj_hits": {str(k): v for k, v in obj_hits.items()},
-                "weighted_contrib": {str(k): w for k, w in weighted_contrib.items()},
-                "type_logits": type_logits.tolist(),
-                "type_probs": type_probs.tolist(),
+                "obj_hits": {str(k): v for k, v in obj_hits.items()},  # 各对象在房间内的出现证据
+                "type_probs": type_probs.tolist(),  # 房型概率分布
             })
 
         if json_rooms:
@@ -251,8 +247,8 @@ class OnlineRoomInfer:
             # 若与上一次写入的环境步相同，则跳过，防止重复记录
             if self._last_env_step_dumped.get(env_id) != cur_step:
                 buf.append({
-                     "step": cur_step,
-                    "rooms": json_rooms,
+                    "env_step": cur_step,  # 记录当前环境步编号
+                    "rooms": json_rooms,  # 当前步的所有房间得分信息
                 })
                 # 记录最新写入的环境步
                 self._last_env_step_dumped[env_id] = cur_step
