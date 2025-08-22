@@ -143,13 +143,17 @@ class OnlineRoomInfer:
         assert explored.shape == (H, W)
         assert sem_probs.shape[1:] == (H, W)
         free = (traversible.astype(np.uint8) > 0) & (explored.astype(np.uint8) > 0)
+        free_sum = int(free.sum())  # 可行走且已探索的像素数
+        explored_sum = int(explored.astype(np.uint8).sum())  # 已探索像素数
         # 1) 房间分割
         room_id_map = self._segment_rooms(free)
+        n_rooms = int(room_id_map.max())  # 当前房间数量
+        if free_sum == 0 or n_rooms == 0:
+            logger.warning(f"[env{env_id} step{env_step}] free.sum={free_sum}, rooms={n_rooms}")
         self.room_id_map = room_id_map.astype(np.int32)
 
         # 2) 统计各房间的对象证据
         self.rooms = []
-        n_rooms = int(room_id_map.max())  # 当前房间数量
         # 即使房间数为 0 也继续执行后续逻辑，以便记录 env_step=0 等步骤
         # 因此不再在此提前返回
 
@@ -246,10 +250,14 @@ class OnlineRoomInfer:
         cur_step = int(env_step)
         # 若与上一次写入的环境步相同，则跳过，防止重复记录
         if self._last_env_step_dumped.get(env_id) != cur_step:
-            buf.append({
+            entry = {
                 "env_step": cur_step,  # 记录当前环境步编号
                 "rooms": json_rooms,  # 当前步的所有房间得分信息
-            })  # 即使无房间也记录该环境步
+            }
+            if len(json_rooms) == 0:
+                entry["free_sum"] = free_sum  # 记录可行走像素数，便于排查
+                entry["explored_sum"] = explored_sum  # 记录已探索像素数
+            buf.append(entry)  # 即使无房间也记录该环境步
             # 记录最新写入的环境步
             self._last_env_step_dumped[env_id] = cur_step
 

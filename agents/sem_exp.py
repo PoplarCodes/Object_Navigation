@@ -426,18 +426,3 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                 self.rank, self.episode_no, self.timestep)  # Episode编号无需再偏移
             cv2.imwrite(fn, self.vis_image)
 
-
-            # 获取当前环境步并更新房型推理器，保存房间推理相关结果
-            env_step = int(self.timestep)
-            room_infer = inputs.get('room_infer')
-            if room_infer is not None:
-                # 构造可行走、已探索与语义概率地图
-                traversible = (np.rint(map_pred) == 1)
-                explored = (np.rint(exp_pred) == 1)
-                sem_probs = np.zeros((args.num_sem_categories,
-                                      sem_map_raw.shape[0],
-                                      sem_map_raw.shape[1]), dtype=np.float32)
-                for c in range(args.num_sem_categories):
-                    sem_probs[c][sem_map_raw == c] = 1.0
-                room_infer.update(traversible, explored, sem_probs,
-                                  env_id=self.rank, env_step=env_step)
