@@ -14,7 +14,7 @@ from envs import make_vec_envs
 from arguments import get_args
 import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
-from skimage.morphology import binary_dilation, disk  # 形态学操作用于前沿提取
+from skimage.morphology import binary_dilation, binary_erosion, disk  # 形态学操作用于前沿提取
 from room_prior import build_online_room_infer_from_args  # 引入房间先验推理器构建函数
 
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -41,6 +41,11 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
     """
     if room_infer_obj is None or len(room_infer_obj.rooms) == 0:
         return fallback_goal, last_room_id, hold_steps
+
+    # 若长期只有一个房间且已在该房间停留过久，触发回退策略
+    if len(room_infer_obj.rooms) <= 1 and hold_steps >= max(3 * min_hold_steps, 60):
+        return fallback_goal, last_room_id, 0
+
 
     # 计算各房间的累计概率作为权重
     room_probs = np.array([
@@ -74,32 +79,39 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
 
     mask = room_infer_obj.rooms[chosen_rid].pixels
 
-    # 根据输入半径换算像素，膨胀房间以覆盖门口附近的前沿
-    dil_px = max(int(band_radius_m / room_infer_obj.cfg.resolution_m), 1)
-    dilated = binary_dilation(mask, disk(dil_px))
-    band_frontier = frontier & dilated
+    # 1) 构造“门宽尺度”的边界环带
+    r_min_px = max(int(0.5 * room_infer_obj.cfg.door_min_width_m /
+                       room_infer_obj.cfg.resolution_m), 1)
+    inner = binary_erosion(mask, disk(r_min_px))
+    outer = binary_dilation(mask, disk(r_min_px))
+    door_band = outer & (~inner)
 
-    if band_frontier.sum() > 0:
-        # 在膨胀带与前沿的交集内按先验权重进行随机采样
-        weights = prior[band_frontier]
-        if weights.sum() > 0:
-            weights = weights / weights.sum()
-            coords = np.argwhere(band_frontier)
-            idx = np.random.choice(len(coords), p=weights)
-            y, x = coords[idx]
-        else:
-            coords = np.argwhere(band_frontier)
-            y, x = coords[np.random.choice(len(coords))]
+    # 2) 优先在门宽带与前沿的交集中采样
+    door_frontier = frontier & door_band
+    if door_frontier.any():
+        w = prior[door_frontier]
+        w = w / (w.sum() + 1e-6)
+        coords = np.argwhere(door_frontier)
+        y, x = coords[np.random.choice(len(coords), p=w)]
     else:
-        # 否则回退到房间内部的最大值或质心
-        sub_prior = prior * mask
-        if sub_prior.sum() > 0:
-            y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
+        # 兜底：回到原来的膨胀带前沿采样
+        dil_px = max(int(band_radius_m / room_infer_obj.cfg.resolution_m), 1)
+        band_frontier = frontier & binary_dilation(mask, disk(dil_px))
+        if band_frontier.any():
+            w = prior[band_frontier]
+            w = w / (w.sum() + 1e-6)
+            coords = np.argwhere(band_frontier)
+            y, x = coords[np.random.choice(len(coords), p=w)]
         else:
-            coords = np.argwhere(mask)
-            if coords.size == 0:
-                return fallback_goal, chosen_rid, hold_steps
-            y, x = coords.mean(axis=0).astype(int)
+            # 再兜底：房间内部最大值/质心
+            sub_prior = prior * mask
+            if sub_prior.sum() > 0:
+                y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
+            else:
+                coords = np.argwhere(mask)
+                if coords.size == 0:
+                    return fallback_goal, chosen_rid, hold_steps
+                y, x = coords.mean(axis=0).astype(int)
 
     return (int(x), int(y)), chosen_rid, hold_steps
 
