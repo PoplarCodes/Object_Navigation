@@ -579,6 +579,20 @@ def main():
         # 当前目标类别ID列表，用于后续策略与房间先验
         goal_cat_ids = np.asarray([infos[env_idx]['goal_cat_id']
                                    for env_idx in range(num_scenes)])
+
+        # 每个环境步都更新房间推理器，按环境步记录对象-房型得分
+        for e in range(num_scenes):
+            # 构造可行走与已探索栅格，以及当前语义置信度
+            traversible = (local_map[e, 0].cpu().numpy() == 0)
+            explored = (local_map[e, 1].cpu().numpy() > 0)
+            sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
+            explored_ratio_map = local_map[e, 1].cpu().numpy()  # 探索比例用于先验衰减
+            # 使用环境返回的真实时间步 env_step 记录房型打分
+            room_infer[e].update(traversible, explored, sem_probs,
+                                 env_id=e,
+                                 env_step=int(infos[e]['time']),
+                                 explored_ratio_map=explored_ratio_map)
+
         # ------------------------------------------------------------------
         # Global Policy
         if l_step == args.num_local_steps - 1:
@@ -626,17 +640,6 @@ def main():
 
             extras[:, 0] = global_orientation[:, 0]
             extras[:, 1] = goal_cat_id
-
-            # 更新房间先验推理器
-            for e in range(num_scenes):
-                traversible = (local_map[e, 0].cpu().numpy() == 0)
-                explored = (local_map[e, 1].cpu().numpy() > 0)
-                sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
-                explored_ratio_map = local_map[e, 1].cpu().numpy()  # 传入已探索比例地图，供房间先验衰减使用
-                room_infer[e].update(traversible, explored, sem_probs,
-                                     env_id=e,
-                                     env_step=int(infos[e]['time']),
-                                     explored_ratio_map=explored_ratio_map)  # 使用环境返回的真实时间步，确保写盘编号正确
 
             # Get exploration reward and metrics
             g_reward = torch.from_numpy(np.asarray(
