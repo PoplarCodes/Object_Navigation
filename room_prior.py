@@ -160,6 +160,20 @@ class OnlineRoomInfer:
         # 预先把语义概率阈值化/平滑
         sem_soft = np.clip(sem_probs, 0.0, 1.0).astype(np.float32)
 
+        # === NEW A: 不依赖房间分割的全局物体证据（仅统计已探索区域） ===
+        explored_mask = (explored.astype(np.uint8) > 0)
+        global_obj_hits: Dict[int, float] = {}
+        for k in range(self.n_obj):
+            v = float((sem_soft[k] * explored_mask).sum())
+            if v > 0:
+                global_obj_hits[k] = v
+
+        # === NEW B: 兜底房间 ===
+        # 若房间分割失败但观测到物体，则将已探索区域视为临时房间
+        if int(room_id_map.max()) == 0 and len(global_obj_hits) > 0 and explored_sum > 0:
+            room_id_map = (explored_mask > 0).astype(np.int32)  # 已探索区域标为房间1
+            n_rooms = 1
+            self.room_id_map = room_id_map.astype(np.int32)
 
         # 预备保存对象到房型打分链路的中间结果
         json_rooms: List[Dict] = []  # 收集所有房间的打分信息
@@ -254,6 +268,9 @@ class OnlineRoomInfer:
                 "env_step": cur_step,  # 记录当前环境步编号
                 "rooms": json_rooms,  # 当前步的所有房间得分信息
             }
+            # === NEW C: 总是记录本步的全局物体证据 ===
+            if len(global_obj_hits) > 0:
+                entry["global_obj_hits"] = {str(k): v for k, v in global_obj_hits.items()}
             if len(json_rooms) == 0:
                 entry["free_sum"] = free_sum  # 记录可行走像素数，便于排查
                 entry["explored_sum"] = explored_sum  # 记录已探索像素数
