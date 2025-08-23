@@ -565,7 +565,8 @@ def main():
                 # 将本次 Episode 的关键统计写入 info.log
                 episode_data = {
                     'thread_id': int(infos[e].get('thread_id', e)),
-                    'episode_id': int(infos[e].get('episode_id', 0)),
+                    # reset 后的 episode_id 指向下一轮，因此需减 1 才是刚结束的编号
+                    'episode_id': int(infos[e].get('episode_id', 0)) - 1,
                     'scene': infos[e].get('scene'),
                     'goal_category': infos[e].get('goal_name'),
                     'success': int(success),
@@ -580,11 +581,21 @@ def main():
                         episode_data['failure_reason'] = 'stop_before_goal'
                     else:
                         episode_data['failure_reason'] = 'timeout'
+
+                # 打开日志文件，将 Episode 信息和当前汇总信息同时写入
                 with open(info_log_file, 'a', encoding='utf-8') as f:
                     f.write(json.dumps(episode_data, ensure_ascii=False) + '\n')
-                total_episodes += 1
-                if success:
-                    success_episodes += 1
+                    # 先更新累计统计
+                    total_episodes += 1
+                    if success:
+                        success_episodes += 1
+                    # 紧接着写入最新的汇总统计
+                    summary = {
+                        'total_episodes': total_episodes,
+                        'success_episodes': success_episodes
+                    }
+                    f.write(json.dumps(summary, ensure_ascii=False) + '\n')
+
 
                 if args.eval:
                     episode_success[e].append(success)
