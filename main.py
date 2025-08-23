@@ -42,8 +42,10 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
     if room_infer_obj is None or len(room_infer_obj.rooms) == 0:
         return fallback_goal, last_room_id, hold_steps
 
-    # 若长期只有一个房间且已在该房间停留过久，触发回退策略
-    if len(room_infer_obj.rooms) <= 1 and hold_steps >= max(3 * min_hold_steps, 60):
+    # 解锁阈值：三倍最小持有步数或 60 步，取较大值
+    unlock_thresh = max(3 * min_hold_steps, 60)
+    # 若仅存在 1 个房间且已停留超过阈值，则直接回退到全局策略
+    if len(room_infer_obj.rooms) <= 1 and hold_steps >= unlock_thresh:
         return fallback_goal, last_room_id, 0
 
 
@@ -90,18 +92,30 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
     door_frontier = frontier & door_band
     if door_frontier.any():
         w = prior[door_frontier]
-        w = w / (w.sum() + 1e-6)
         coords = np.argwhere(door_frontier)
-        y, x = coords[np.random.choice(len(coords), p=w)]
+        w_sum = w.sum()
+        if w_sum > 0:
+            # 按先验权重采样门口前沿点
+            w = w / w_sum
+            y, x = coords[np.random.choice(len(coords), p=w)]
+        else:
+            # 若权重全为 0，则均匀采样
+            y, x = coords[np.random.choice(len(coords))]
     else:
         # 兜底：回到原来的膨胀带前沿采样
         dil_px = max(int(band_radius_m / room_infer_obj.cfg.resolution_m), 1)
         band_frontier = frontier & binary_dilation(mask, disk(dil_px))
         if band_frontier.any():
             w = prior[band_frontier]
-            w = w / (w.sum() + 1e-6)
             coords = np.argwhere(band_frontier)
-            y, x = coords[np.random.choice(len(coords), p=w)]
+            w_sum = w.sum()
+            if w_sum > 0:
+                # 按先验权重采样膨胀带前沿点
+                w = w / w_sum
+                y, x = coords[np.random.choice(len(coords), p=w)]
+            else:
+                # 若权重全为 0，则均匀采样
+                y, x = coords[np.random.choice(len(coords))]
         else:
             # 再兜底：房间内部最大值/质心
             sub_prior = prior * mask
@@ -114,7 +128,6 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
                 y, x = coords.mean(axis=0).astype(int)
 
     return (int(x), int(y)), chosen_rid, hold_steps
-
 
 def main():
     args = get_args()
