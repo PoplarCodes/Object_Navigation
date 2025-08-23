@@ -342,7 +342,6 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.info['sensor_pose'] = [0., 0., 0.]
         self.info['goal_cat_id'] = self.goal_idx
         self.info['goal_name'] = self.goal_name
-        self.info['episode_id'] = self.episode_no  # 记录当前 Episode 编号
         return state, self.info
 
 
@@ -381,7 +380,6 @@ class ObjectGoal_Env(habitat.RLEnv):
             self.info['distance_to_goal'] = dist
             self.info['spl'] = spl
             self.info['success'] = success
-            self.info['stop_action'] = self.stopped  # 用于日志统计 stop 动作
 
         rgb = obs['rgb'].astype(np.uint8)
         depth = obs['depth']
