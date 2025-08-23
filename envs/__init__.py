@@ -51,7 +51,10 @@ class VecPyTorch():
         obs, reward, done, info = self.venv.plan_act_and_preprocess(inputs)
         obs = torch.from_numpy(obs).float().to(self.device)
         reward = torch.from_numpy(reward).float()
-        return obs, reward, done, info
+        # info 中包含上一轮和下一轮的环境信息，这里拆分便于上层使用
+        final_info = [i['final'] for i in info]
+        next_info = [i['next'] for i in info]
+        return obs, reward, done, final_info, next_info
 
     def close(self):
         return self.venv.close()

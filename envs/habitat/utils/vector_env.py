@@ -217,11 +217,20 @@ class VectorEnv:
                     connection_write_fn(env.current_episode)
 
                 elif command == PLAN_ACT_AND_PREPROCESS:
-                    observations, reward, done, info = \
-                            env.plan_act_and_preprocess(data)
+                    observations, reward, done, info = env.plan_act_and_preprocess(data)
+                    # 先保存旧 episode 的信息
+                    final_info = info
                     if auto_reset_done and done:
-                        observations, info = env.reset()
-                    connection_write_fn((observations, reward, done, info))
+                        # 若 episode 结束，则重置环境以获取下一轮的起始观测与信息
+                        new_obs, new_info = env.reset()
+                    else:
+                        # 若未结束，则继续使用当前观测与信息
+                        new_obs, new_info = observations, info
+                        # 通过管道返回新观测、奖励、结束标记以及前后两轮的信息
+                    connection_write_fn((new_obs, reward, done, {
+                        "final": final_info,
+                        "next": new_info
+                    }))
 
                 elif command == COUNT_EPISODES_COMMAND:
                     connection_write_fn(len(env.episodes))
