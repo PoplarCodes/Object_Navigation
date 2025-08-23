@@ -71,9 +71,15 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.last_sim_location = None
         self.trajectory_states = []
         self.info = {}
+        # 初始化与任务相关的指标占位
         self.info['distance_to_goal'] = None
         self.info['spl'] = None
         self.info['success'] = None
+        # 记录场景、线程及 episode 等信息，便于外部日志统计
+        self.info['scene'] = None
+        self.info['episode_id'] = None
+        self.info['thread_id'] = self.rank
+        self.info['stop_called'] = False
 
     def load_new_episode(self):
         """The function loads a fixed episode from the episode dataset. This
@@ -342,6 +348,11 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.info['sensor_pose'] = [0., 0., 0.]
         self.info['goal_cat_id'] = self.goal_idx
         self.info['goal_name'] = self.goal_name
+        # 记录当前场景与 episode 编号等信息
+        self.info['scene'] = self.scene_name
+        self.info['episode_id'] = self.episode_no
+        self.info['thread_id'] = self.rank
+        self.info['stop_called'] = False
         return state, self.info
 
 
@@ -387,7 +398,8 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self.timestep += 1
         self.info['time'] = self.timestep
-
+        # 记录是否触发了 stop 动作
+        self.info['stop_called'] = self.stopped
         return state, rew, done, self.info
 
     def get_reward_range(self):

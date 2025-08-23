@@ -19,7 +19,6 @@ from room_prior import build_online_room_infer_from_args  # 引入房间先验�
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
-
 def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
                         fallback_goal, last_room_id: int, hold_steps: int,
                         min_hold_steps: int, switch_ratio: float, topk: int,
@@ -48,6 +47,7 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
     # 若仅存在 1 个房间且已停留超过阈值，则直接回退到全局策略
     if len(room_infer_obj.rooms) <= 1 and hold_steps >= unlock_thresh:
         return fallback_goal, last_room_id, 0
+
 
     # 计算各房间的累计概率作为权重
     room_probs = np.array([
@@ -129,9 +129,9 @@ def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
 
     return (int(x), int(y)), chosen_rid, hold_steps
 
-
 def main():
     args = get_args()
+
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -158,6 +158,13 @@ def main():
     print(args)
     logging.info(args)
 
+    # 单独的信息日志文件，用于记录每个 Episode 的统计
+    info_log_file = os.path.join(args.dump_location, 'models', 'info.log')
+    os.makedirs(os.path.dirname(info_log_file), exist_ok=True)
+    total_episodes = 0  # 已运行的 Episode 总数
+    success_episodes = 0  # 成功的 Episode 数
+
+
     # Logging and loss variables
     num_scenes = args.num_processes  # 并行场景的数量
     num_episodes = int(args.num_eval_episodes)
@@ -182,6 +189,7 @@ def main():
         episode_success = deque(maxlen=1000)
         episode_spl = deque(maxlen=1000)
         episode_dist = deque(maxlen=1000)
+
 
     # 进程完成状态
     finished = np.zeros((args.num_processes))
@@ -473,6 +481,7 @@ def main():
         elif getattr(args, 'use_room_prior', False):
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
 
+
             # 计算前沿掩码：free & dilate(explored) & ~explored
             free = (local_map[e, 0].cpu().numpy() == 0)
             explored = (local_map[e, 1].cpu().numpy() > 0)
@@ -553,6 +562,30 @@ def main():
                 dist = infos[e]['distance_to_goal']
                 spl_per_category[infos[e]['goal_name']].append(spl)
                 success_per_category[infos[e]['goal_name']].append(success)
+
+                # 将本次 Episode 的关键统计写入 info.log
+                episode_data = {
+                    'thread_id': int(infos[e].get('thread_id', e)),
+                    'episode_id': int(infos[e].get('episode_id', 0)),
+                    'scene': infos[e].get('scene'),
+                    'goal_category': infos[e].get('goal_name'),
+                    'success': int(success),
+                    'distance_to_goal': float(dist),
+                    'stop_called': bool(infos[e].get('stop_called', False)),
+                    'steps': int(infos[e].get('time', 0)),
+                    'spl': float(spl)
+                }
+                if not success:
+                    # 根据是否调用 stop 判断失败原因
+                    if infos[e].get('stop_called', False):
+                        episode_data['failure_reason'] = 'stop_before_goal'
+                    else:
+                        episode_data['failure_reason'] = 'timeout'
+                with open(info_log_file, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps(episode_data, ensure_ascii=False) + '\n')
+                total_episodes += 1
+                if success:
+                    success_episodes += 1
 
                 if args.eval:
                     episode_success[e].append(success)
@@ -957,6 +990,14 @@ def main():
         with open('{}/{}_success_per_cat_pred_thr.json'.format(
                 dump_dir, args.split), 'w') as f:
             json.dump(success_per_category, f)
+
+    # 写入汇总统计：总 Episode 数与成功数
+    summary = {
+        'total_episodes': total_episodes,
+        'successful_episodes': success_episodes
+    }
+    with open(info_log_file, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(summary, ensure_ascii=False) + '\n')
 
     # 绘制奖励曲线
     plt.plot(global_eps_rewards, label="Global eps mean rew")
