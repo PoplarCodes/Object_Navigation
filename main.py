@@ -491,6 +491,14 @@ def main():
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+            # 若全局策略给出的目标已被探索，则在前沿上重新采样
+            if explored[gy, gx]:
+                frontier_coords = np.argwhere(frontier)
+                if frontier_coords.size > 0:
+                    dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
+                    nearest = frontier_coords[dists == dists.min()]
+                    gy, gx = nearest[np.random.choice(len(nearest))]
+                    gx, gy = int(gx), int(gy)
             fallback = (gx, gy)
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                 # 房间级采样：考虑房间持有策略与前沿
@@ -512,6 +520,16 @@ def main():
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+            explored = (local_map[e, 1].cpu().numpy() > 0)
+            if explored[gy, gx]:
+                free = (local_map[e, 0].cpu().numpy() == 0)
+                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+                frontier_coords = np.argwhere(frontier)
+                if frontier_coords.size > 0:
+                    dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
+                    nearest = frontier_coords[dists == dists.min()]
+                    gy, gx = nearest[np.random.choice(len(nearest))]
+                    gx, gy = int(gx), int(gy)
             goal_maps[e][gx, gy] = 1
 
     planner_inputs = [{} for e in range(num_scenes)]
@@ -795,6 +813,14 @@ def main():
                 shift = np.random.randint(-1, 2, size=2)
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                # 若目标落在已探索区域，则重新在前沿采样
+                if explored[gy, gx]:
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
+                        nearest = frontier_coords[dists == dists.min()]
+                        gy, gx = nearest[np.random.choice(len(nearest))]
+                        gx, gy = int(gx), int(gy)
                 fallback = (gx, gy)
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                     (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
@@ -815,6 +841,16 @@ def main():
                 shift = np.random.randint(-1, 2, size=2)
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
+                explored = (local_map[e, 1].cpu().numpy() > 0)
+                if explored[gy, gx]:
+                    free = (local_map[e, 0].cpu().numpy() == 0)
+                    frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
+                        nearest = frontier_coords[dists == dists.min()]
+                        gy, gx = nearest[np.random.choice(len(nearest))]
+                        gx, gy = int(gx), int(gy)
                 goal_maps[e][gx, gy] = 1
         # ------------------------------------------------------------------
 
