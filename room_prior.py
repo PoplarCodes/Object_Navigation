@@ -150,7 +150,9 @@ class OnlineRoomInfer:
         room_id_map = self._segment_rooms(free)
         n_rooms = int(room_id_map.max())  # 当前房间数量
         if free_sum == 0 or n_rooms == 0:
-            logger.warning(f"[env{env_id} step{env_step}] free.sum={free_sum}, rooms={n_rooms}")
+            logger.debug(
+                f"[env{env_id} step{env_step}] free.sum={free_sum}, rooms={n_rooms}"
+            )  # 正常流程下此信息意义不大，使用调试级别避免干扰日志
         self.room_id_map = room_id_map.astype(np.int32)
 
         # 2) 统计各房间的对象证据
