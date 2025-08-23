@@ -57,7 +57,7 @@ def get_args():
                                 2: Render the observation with semantic
                                    predictions and the predicted semantic map
                                 (default: 0)""")
-    parser.add_argument('--print_images', type=int, default=0,
+    parser.add_argument('--print_images', type=int, default=1,
                         help='1: save visualization as images')
 
     # Environment, dataset and episode specifications
@@ -86,7 +86,7 @@ def get_args():
                         help="Minimum depth for depth sensor in meters")
     parser.add_argument('--max_depth', type=float, default=5.0,
                         help="Maximum depth for depth sensor in meters")
-    parser.add_argument('--success_dist', type=float, default=1.0,
+    parser.add_argument('--success_dist', type=float, default=1.5,
                         help="success distance threshold in meters")
     parser.add_argument('--floor_thr', type=int, default=50,
                         help="floor threshold in cm")
@@ -161,7 +161,7 @@ def get_args():
                         help='最小房间面积，小于则并回邻居（平方米）')
     parser.add_argument('--room_vote_temp', type=float, default=1.0,
                         help='房型 softmax 温度')
-    parser.add_argument('--room_prior_decay', type=float, default=0.7,
+    parser.add_argument('--room_prior_decay', type=float, default=0.9,
                         help='对已探索充分房间的先验衰减系数 0~1')
     parser.add_argument('--room_prior_topk', type=int, default=2,
                         help='若>0，则从先验概率最高的Top-K像素中随机挑选目标')
@@ -174,6 +174,10 @@ def get_args():
                         help='在达到该步数前若优势不明显则保持旧目标')
     parser.add_argument('--frontier_band_radius_m', type=float, default=0.4,
                         help='房间采样时前沿带膨胀半径（米）')
+    parser.add_argument('--goal_history_size', type=int, default=5,
+                        help='记录最近长期目标的队列长度')
+    parser.add_argument('--goal_revisit_dist', type=float, default=5.0,
+                        help='若新目标与历史目标距离小于该阈值则重新采样（网格距离）')
 
     #添加参数来指定目标类别
     # parser.add_argument('--target_goal', type=int, default=0,

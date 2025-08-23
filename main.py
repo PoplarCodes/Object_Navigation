@@ -206,6 +206,10 @@ def main():
     last_room_ids = [-1 for _ in range(num_scenes)]  # 上一次的房间编号
     goal_hold_steps = [0 for _ in range(num_scenes)]  # 当前房间已持有的步数
 
+    # 记录每个环境最近的长期目标，避免重复访问
+    recent_goals = [deque(maxlen=args.goal_history_size)
+                    for _ in range(num_scenes)]
+
     g_process_rewards = np.zeros((num_scenes))
 
     # 初始化房间先验推理器，每个环境一个实例
@@ -511,27 +515,44 @@ def main():
                                         args.frontier_band_radius_m)
             else:
                 gx, gy = fallback
+                # 若新目标过于接近历史目标，则在前沿重新采样
+                if recent_goals[e] and any(
+                        np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
+                        for p in recent_goals[e]):
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                        gx, gy = int(gx), int(gy)
             goal_maps[e][:, :] = 0
             goal_maps[e][gx, gy] = 1
             goal_hold_steps[e] += 1
+            recent_goals[e].append((gx, gy))
         else:
+            explored = (local_map[e, 1].cpu().numpy() > 0)
+            free = (local_map[e, 0].cpu().numpy() == 0)
+            frontier = free & binary_dilation(explored, disk(1)) & (~explored)
             gx, gy = global_goals[e]
             # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-            explored = (local_map[e, 1].cpu().numpy() > 0)
             if explored[gy, gx]:
-                free = (local_map[e, 0].cpu().numpy() == 0)
-                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
                 frontier_coords = np.argwhere(frontier)
                 if frontier_coords.size > 0:
                     dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
                     nearest = frontier_coords[dists == dists.min()]
                     gy, gx = nearest[np.random.choice(len(nearest))]
                     gx, gy = int(gx), int(gy)
+                    # 若与历史目标距离过近，则重新在前沿采样
+                    if recent_goals[e] and any(
+                            np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
+                            for p in recent_goals[e]):
+                        frontier_coords = np.argwhere(frontier)
+                        if frontier_coords.size > 0:
+                            gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                            gx, gy = int(gx), int(gy)
             goal_maps[e][gx, gy] = 1
-
+            recent_goals[e].append((gx, gy))
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
         p_input['map_pred'] = local_map[e, 0, :, :].cpu().numpy()
@@ -635,6 +656,8 @@ def main():
                 # 重置房间持有状态，避免跨 episode 影响
                 last_room_ids[e] = -1
                 goal_hold_steps[e] = 0
+                # 清空历史目标队列，避免上一回合干扰
+                recent_goals[e].clear()
                 # 环境重置后立即调用房间推理器，写出上一轮数据并初始化新episode
                 traversible = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
@@ -832,26 +855,44 @@ def main():
                                             args.frontier_band_radius_m)
                 else:
                     gx, gy = fallback
+                    # 判断与历史目标的距离，过近则重新从前沿采样
+                    if recent_goals[e] and any(
+                            np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
+                            for p in recent_goals[e]):
+                        frontier_coords = np.argwhere(frontier)
+                        if frontier_coords.size > 0:
+                            gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                            gx, gy = int(gx), int(gy)
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gx, gy] = 1
                 goal_hold_steps[e] += 1
+                recent_goals[e].append((gx, gy))
             else:
+                explored = (local_map[e, 1].cpu().numpy() > 0)
+                free = (local_map[e, 0].cpu().numpy() == 0)
+                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
                 gx, gy = global_goals[e]
                 # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
                 shift = np.random.randint(-1, 2, size=2)
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-                explored = (local_map[e, 1].cpu().numpy() > 0)
                 if explored[gy, gx]:
-                    free = (local_map[e, 0].cpu().numpy() == 0)
-                    frontier = free & binary_dilation(explored, disk(1)) & (~explored)
                     frontier_coords = np.argwhere(frontier)
                     if frontier_coords.size > 0:
                         dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
                         nearest = frontier_coords[dists == dists.min()]
                         gy, gx = nearest[np.random.choice(len(nearest))]
                         gx, gy = int(gx), int(gy)
+                        # 若目标与历史记录过近，则重新选择前沿点
+                        if recent_goals[e] and any(
+                                np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
+                                for p in recent_goals[e]):
+                            frontier_coords = np.argwhere(frontier)
+                            if frontier_coords.size > 0:
+                                gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                                gx, gy = int(gx), int(gy)
                 goal_maps[e][gx, gy] = 1
+                recent_goals[e].append((gx, gy))
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
