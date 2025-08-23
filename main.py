@@ -158,12 +158,11 @@ def main():
     print(args)
     logging.info(args)
 
-    # 单独的信息日志文件，用于记录每个 Episode 的统计
-    info_log_file = os.path.join(args.dump_location, 'models', 'info.log')
+    # 单独的信息日志文件（存放在当前实验目录下），用于记录每个 Episode 的统计
+    info_log_file = os.path.join(log_dir, 'info.log')  # tmp/models/实验名/info.log
     os.makedirs(os.path.dirname(info_log_file), exist_ok=True)
     total_episodes = 0  # 已运行的 Episode 总数
     success_episodes = 0  # 成功的 Episode 数
-
 
     # Logging and loss variables
     num_scenes = args.num_processes  # 并行场景的数量
