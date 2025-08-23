@@ -26,6 +26,8 @@ def get_args():
     parser.add_argument('--num_train_episodes', type=int, default=10000,           #原default=10000
                         help="""number of train episodes per scene
                                 before loading the next scene""")
+    parser.add_argument('--episodes_per_scene', type=int, default=10,
+                        help='单个场景运行多少个 episode 后切换场景')
     parser.add_argument('--no_cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument("--sim_gpu_id", type=int, default=0,
@@ -159,16 +161,16 @@ def get_args():
                         help='最小房间面积，小于则并回邻居（平方米）')
     parser.add_argument('--room_vote_temp', type=float, default=1.0,
                         help='房型 softmax 温度')
-    parser.add_argument('--room_prior_decay', type=float, default=0.5,
+    parser.add_argument('--room_prior_decay', type=float, default=0.7,
                         help='对已探索充分房间的先验衰减系数 0~1')
-    parser.add_argument('--room_prior_topk', type=int, default=0,
+    parser.add_argument('--room_prior_topk', type=int, default=2,
                         help='若>0，则从先验概率最高的Top-K像素中随机挑选目标')
     parser.add_argument('--default_type_logits', type=float, nargs=7,
                         default=[0.2, 0.1, 0.15, 0.1, 0.2, 0.15, 0.1],
                         help='无对象证据时的7维房型默认分布')
-    parser.add_argument('--goal_switch_ratio', type=float, default=1.2,
+    parser.add_argument('--goal_switch_ratio', type=float, default=1.1,
                         help='新房间概率需超过当前房间的倍数阈值才切换')
-    parser.add_argument('--min_goal_hold_steps', type=int, default=10,
+    parser.add_argument('--min_goal_hold_steps', type=int, default=15,
                         help='在达到该步数前若优势不明显则保持旧目标')
     parser.add_argument('--frontier_band_radius_m', type=float, default=0.4,
                         help='房间采样时前沿带膨胀半径（米）')

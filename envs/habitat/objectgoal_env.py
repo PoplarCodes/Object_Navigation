@@ -50,6 +50,8 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.last_scene_path = None
         self.scene_path = None
         self.scene_name = None
+        # 场景索引用于多场景轮换，初始为 -1 表示尚未加载任何场景
+        self.scene_idx = -1
 
         # Episode Dataset info
         self.eps_data = None
@@ -316,7 +318,8 @@ class ObjectGoal_Env(habitat.RLEnv):
                          evaluation metric info
         """
         args = self.args
-        new_scene = self.episode_no % args.num_train_episodes == 0
+        # 根据每个场景允许的 episode 数判断是否切换场景
+        new_scene = (self.episode_no % args.episodes_per_scene) == 0
 
         self.episode_no += 1
 
@@ -327,6 +330,8 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.trajectory_states = []
 
         if new_scene:
+            # 进入下一场景并调用 Habitat 环境重置
+            self.scene_idx += 1
             obs = super().reset()
             self.scene_name = self.habitat_env.sim.config.SCENE
             print("Changing scene: {}/{}".format(self.rank, self.scene_name))
