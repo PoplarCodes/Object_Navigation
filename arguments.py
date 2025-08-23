@@ -86,7 +86,7 @@ def get_args():
                         help="Minimum depth for depth sensor in meters")
     parser.add_argument('--max_depth', type=float, default=5.0,
                         help="Maximum depth for depth sensor in meters")
-    parser.add_argument('--success_dist', type=float, default=1.0,
+    parser.add_argument('--success_dist', type=float, default=5.0,
                         help="success distance threshold in meters")
     parser.add_argument('--floor_thr', type=int, default=50,
                         help="floor threshold in cm")
