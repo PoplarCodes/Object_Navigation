@@ -172,16 +172,20 @@ def main():
         episode_success = []
         episode_spl = []
         episode_dist = []
+        episode_stop = []  # 记录每个环境的 stop 动作
         for _ in range(args.num_processes):
             episode_success.append(deque(maxlen=num_episodes))
             episode_spl.append(deque(maxlen=num_episodes))
             episode_dist.append(deque(maxlen=num_episodes))
+            episode_stop.append(deque(maxlen=num_episodes))
 
     # false 0为训练模式
     else:
         episode_success = deque(maxlen=1000)
         episode_spl = deque(maxlen=1000)
         episode_dist = deque(maxlen=1000)
+        episode_stop = deque(maxlen=1000)  # 记录每个 Episode 是否执行 stop
+        episode_marks = []  # 保存待输出的 Episode 信息
 
     # 进程完成状态
     finished = np.zeros((args.num_processes))
@@ -552,8 +556,11 @@ def main():
                 spl = infos[e]['spl']
                 success = infos[e]['success']
                 dist = infos[e]['distance_to_goal']
+                stop = infos[e]['stop_action']  # 是否执行 stop 动作
+                episode_id = infos[e]['episode_id']  # 当前 Episode 编号
                 spl_per_category[infos[e]['goal_name']].append(spl)
                 success_per_category[infos[e]['goal_name']].append(success)
+
                 if args.eval:
                     episode_success[e].append(success)
                     episode_spl[e].append(spl)
@@ -564,6 +571,9 @@ def main():
                     episode_success.append(success)
                     episode_spl.append(spl)
                     episode_dist.append(dist)
+                    episode_stop.append(stop)  # 记录 stop 动作
+                    mark = f"({e}/{episode_id}) {'success' if success else 'fail'}, distance: {dist:.2f}, stop: {int(stop)}"
+                    episode_marks.append(mark)  # 保存待输出的 Episode 信息
                 wait_env[e] = 1.
                 update_intrinsic_rew(e)
                 init_map_and_pose_for_env(e)
@@ -882,6 +892,10 @@ def main():
                         np.mean(g_action_losses),
                         np.mean(g_dist_entropies))
                 ])
+                # 输出每个 Episode 的结果、目标距离及是否执行 stop
+                if episode_marks:
+                    log += "\n\tMark: " + "; ".join(episode_marks)
+                    episode_marks.clear()
 
             print(log)
             logging.info(log)
