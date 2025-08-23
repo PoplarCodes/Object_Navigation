@@ -529,8 +529,8 @@ def main():
         if args.visualize or args.print_images:
             local_map[e, -1, :, :] = 1e-5
             p_input['sem_map_pred'] = local_map[e, 4:, :, :].argmax(0).cpu().numpy()
-    # 执行计划、动作与预处理，同时得到前一轮和下一轮的环境信息
-    obs, _, done, final_infos, next_infos = envs.plan_act_and_preprocess(planner_inputs)
+    # 执行计划、动作与预处理，同时得到包含前一轮与下一轮信息的字典
+    obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
 
     start = time.time()
     g_reward = 0
@@ -555,31 +555,32 @@ def main():
                                      for x in done]).to(device)
         g_masks *= l_masks
 
-        # 根据 done 标记处理已结束的 episode，并使用 final_infos 记录的旧信息
+        # 根据 done 标记处理已结束的 episode，并使用 infos[e]['final'] 记录的旧信息
         for e, x in enumerate(done):
             if x:
-                spl = final_infos[e]['spl']
-                success = final_infos[e]['success']
-                dist = final_infos[e]['distance_to_goal']
-                spl_per_category[final_infos[e]['goal_name']].append(spl)
-                success_per_category[final_infos[e]['goal_name']].append(success)
+                final_info = infos[e]['final']
+                spl = final_info['spl']
+                success = final_info['success']
+                dist = final_info['distance_to_goal']
+                spl_per_category[final_info['goal_name']].append(spl)
+                success_per_category[final_info['goal_name']].append(success)
 
                 # 将本次 Episode 的关键统计写入 info.log
                 episode_data = {
-                    'thread_id': int(final_infos[e].get('thread_id', e)),
+                    'thread_id': int(final_info.get('thread_id', e)),
                     # reset 后的 episode_id 指向下一轮，因此需减 1 才是刚结束的编号
-                    'episode_id': int(final_infos[e].get('episode_id', 0)) - 1,
-                    'scene': final_infos[e].get('scene'),
-                    'goal_category': final_infos[e].get('goal_name'),
+                    'episode_id': int(final_info.get('episode_id', 0)) - 1,
+                    'scene': final_info.get('scene'),
+                    'goal_category': final_info.get('goal_name'),
                     'success': int(success),
                     'distance_to_goal': float(dist),
-                    'stop_called': bool(final_infos[e].get('stop_called', False)),
-                    'steps': int(final_infos[e].get('time', 0)),
+                    'stop_called': bool(final_info.get('stop_called', False)),
+                    'steps': int(final_info.get('time', 0)),
                     'spl': float(spl)
                 }
                 if not success:
                     # 根据是否调用 stop 判断失败原因
-                    if final_infos[e].get('stop_called', False):
+                    if final_info.get('stop_called', False):
                         episode_data['failure_reason'] = 'stop_before_goal'
                     else:
                         episode_data['failure_reason'] = 'timeout'
@@ -623,15 +624,15 @@ def main():
                 explored_ratio_map = local_map[e, 1].cpu().numpy()  # 当前探索比例图用于衰减
                 room_infer[e].update(traversible, explored, sem_probs,
                                      env_id=e,
-                                     env_step=int(final_infos[e]['time']),
+                                     env_step=int(final_info['time']),
                                      explored_ratio_map=explored_ratio_map)  # 使用环境时间步，0表示新episode开始
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
         # Semantic Mapping Module
-        # 从 next_infos 中读取当前位置姿态
+        # 从 info['next'] 中读取当前位置姿态
         poses = torch.from_numpy(np.asarray(
-            [next_infos[env_idx]['sensor_pose'] for env_idx
+            [infos[env_idx]['next']['sensor_pose'] for env_idx
              in range(num_scenes)])
         ).float().to(device)
 
@@ -648,8 +649,8 @@ def main():
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
 
         # ------------------------------------------------------------------
-        # 当前目标类别ID列表，用于后续策略与房间先验（来自 next_infos）
-        goal_cat_ids = np.asarray([next_infos[env_idx]['goal_cat_id']
+        # 当前目标类别ID列表，用于后续策略与房间先验（来自 info['next']）
+        goal_cat_ids = np.asarray([infos[env_idx]['next']['goal_cat_id']
                                    for env_idx in range(num_scenes)])
 
         # 每个环境步都更新房间推理器，按环境步记录对象-房型得分
@@ -659,10 +660,10 @@ def main():
             explored = (local_map[e, 1].cpu().numpy() > 0)
             sem_probs = local_map[e, 4:4 + args.num_sem_categories].cpu().numpy()
             explored_ratio_map = local_map[e, 1].cpu().numpy()  # 探索比例用于先验衰减
-            # 使用 next_infos 提供的真实时间步 env_step 记录房型打分
+            # 使用 info['next'] 提供的真实时间步 env_step 记录房型打分
             room_infer[e].update(traversible, explored, sem_probs,
                                  env_id=e,
-                                 env_step=int(next_infos[e]['time']),
+                                 env_step=int(infos[e]['next']['time']),
                                  explored_ratio_map=explored_ratio_map)
 
         # ------------------------------------------------------------------
@@ -714,9 +715,9 @@ def main():
             extras[:, 1] = goal_cat_id
 
             # Get exploration reward and metrics
-            # 从 next_infos 读取探索奖励信息
+            # 从 info['next'] 读取探索奖励信息
             g_reward = torch.from_numpy(np.asarray(
-                [next_infos[env_idx]['g_reward'] for env_idx in range(num_scenes)])
+                [infos[env_idx]['next']['g_reward'] for env_idx in range(num_scenes)])
             ).float().to(device)
             g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
 
@@ -772,8 +773,8 @@ def main():
         goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
         for e in range(num_scenes):
-            # 使用 next_infos 中的目标类别更新语义地图
-            cn = next_infos[e]['goal_cat_id'] + 4
+            # 使用 info['next'] 中的目标类别更新语义地图
+            cn = infos[e]['next']['goal_cat_id'] + 4
             if local_map[e, cn, :, :].sum() != 0.:
                 cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
                 cat_semantic_scores = cat_semantic_map
@@ -839,7 +840,7 @@ def main():
                                           :].argmax(0).cpu().numpy()
 
         # 调用环境继续执行并获得下一步的观测与信息
-        obs, _, done, final_infos, next_infos = envs.plan_act_and_preprocess(planner_inputs)
+        obs, _, done, infos = envs.plan_act_and_preprocess(planner_inputs)
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
