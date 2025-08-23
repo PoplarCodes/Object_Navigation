@@ -8,6 +8,7 @@ from multiprocessing.connection import Connection
 from multiprocessing.context import BaseContext
 from queue import Queue
 from threading import Thread
+
 from typing import (
     Any,
     Callable,
@@ -29,7 +30,7 @@ from habitat.config import Config
 from habitat.core.env import Env, Observations, RLEnv
 from habitat.core.logging import logger
 from habitat.core.utils import tile_images
-
+import copy  # 引入 copy 模块用于深拷贝信息字典，防止在 reset 中被修改
 try:
     # Use torch.multiprocessing if we can.
     # We have yet to find a reason to not use it and
@@ -218,8 +219,9 @@ class VectorEnv:
 
                 elif command == PLAN_ACT_AND_PREPROCESS:
                     observations, reward, done, info = env.plan_act_and_preprocess(data)
-                    # 先保存旧 episode 的信息
-                    final_info = info
+                    # 先保存旧 episode 的信息，使用深拷贝避免 reset 后被覆盖
+                    final_info = copy.deepcopy(info)
+
                     if auto_reset_done and done:
                         # 若 episode 结束，则重置环境以获取下一轮的起始观测与信息
                         new_obs, new_info = env.reset()
