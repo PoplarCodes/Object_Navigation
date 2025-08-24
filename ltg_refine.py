@@ -52,9 +52,10 @@ def _refine_core(ppo_point: Tuple[int, int],
         if best is None:
             f_coords = np.argwhere(frontier)
             if f_coords.size > 0:
-                w = prior[frontier]
-                if w.sum() > 0:
-                    idx = np.argmax(w)
+                # 取出前沿处的先验值，命名为 prior_vals 避免与外部变量重名
+                prior_vals = prior[frontier]
+                if prior_vals.sum() > 0:
+                    idx = np.argmax(prior_vals)
                     fy, fx = f_coords[idx]
                 else:
                     fy, fx = f_coords[0]
