@@ -126,14 +126,15 @@ def main():
 
     # Calculating full and local map sizes
     map_size = args.map_size_cm // args.map_resolution
-    full_w, full_h = map_size, map_size
-    local_w = int(full_w / args.global_downscaling)
+    full_h, full_w = map_size, map_size
+    # 先计算局部网格的高和宽，始终保持[y, x]的顺序
     local_h = int(full_h / args.global_downscaling)
+    local_w = int(full_w / args.global_downscaling)
 
-    # Initializing full and local map
-    full_map = torch.zeros(num_scenes, nc, full_w, full_h).float().to(device)
-    local_map = torch.zeros(num_scenes, nc, local_w,
-                            local_h).float().to(device)
+    # 按[y, x]顺序初始化完整和局部地图，避免宽高混淆
+    full_map = torch.zeros(num_scenes, nc, full_h, full_w).float().to(device)
+    local_map = torch.zeros(num_scenes, nc, local_h,
+                            local_w).float().to(device)
 
     # Initial full and local pose
     full_pose = torch.zeros(num_scenes, 3).float().to(device)
@@ -153,23 +154,24 @@ def main():
     # 计算局部地图边界
     def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
         loc_r, loc_c = agent_loc
-        local_w, local_h = local_sizes
-        full_w, full_h = full_sizes
+        # local_sizes 与 full_sizes 也遵循[y, x]的顺序
+        local_h, local_w = local_sizes
+        full_h, full_w = full_sizes
 
         if args.global_downscaling > 1:
-            gx1, gy1 = loc_r - local_w // 2, loc_c - local_h // 2
-            gx2, gy2 = gx1 + local_w, gy1 + local_h
+            gx1, gy1 = loc_r - local_h // 2, loc_c - local_w // 2
+            gx2, gy2 = gx1 + local_h, gy1 + local_w
             if gx1 < 0:
-                gx1, gx2 = 0, local_w
-            if gx2 > full_w:
-                gx1, gx2 = full_w - local_w, full_w
+                gx1, gx2 = 0, local_h
+            if gx2 > full_h:
+                gx1, gx2 = full_h - local_h, full_h
 
             if gy1 < 0:
-                gy1, gy2 = 0, local_h
-            if gy2 > full_h:
-                gy1, gy2 = full_h - local_h, full_h
+                gy1, gy2 = 0, local_w
+            if gy2 > full_w:
+                gy1, gy2 = full_w - local_w, full_w
         else:
-            gx1, gx2, gy1, gy2 = 0, full_w, 0, full_h
+            gx1, gx2, gy1, gy2 = 0, full_h, 0, full_w
 
         return [gx1, gx2, gy1, gy2]
 
@@ -189,8 +191,8 @@ def main():
             full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
 
             lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                              (local_w, local_h),
-                                              (full_w, full_h))
+                                              (local_h, local_w),
+                                              (full_h, full_w))
 
             planner_pose_inputs[e, 3:] = lmb[e]
             origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
@@ -217,8 +219,8 @@ def main():
         full_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.0
 
         lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                          (local_w, local_h),
-                                          (full_w, full_h))
+                                          (local_h, local_w),
+                                          (full_h, full_w))
 
         planner_pose_inputs[e, 3:] = lmb[e]
         origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
@@ -248,8 +250,8 @@ def main():
     es = 2
     g_observation_space = gym.spaces.Box(0, 1,
                                          (ngc,
-                                          local_w,
-                                          local_h), dtype='uint8')
+                                          local_h,
+                                          local_w), dtype='uint8')  # 观测张量按[y, x]排列
 
     # Global policy action space
     g_action_space = gym.spaces.Box(low=0.0, high=0.99,
@@ -274,7 +276,8 @@ def main():
                        args.entropy_coef, lr=args.lr, eps=args.eps,
                        max_grad_norm=args.max_grad_norm)
 
-    global_input = torch.zeros(num_scenes, ngc, local_w, local_h)
+    # 全局策略输入按[y, x]顺序构建
+    global_input = torch.zeros(num_scenes, ngc, local_h, local_w)
     global_orientation = torch.zeros(num_scenes, 1).long()
     intrinsic_rews = torch.zeros(num_scenes).to(device)
     extras = torch.zeros(num_scenes, 2)
@@ -304,7 +307,7 @@ def main():
 
     # Compute Global policy input
     locs = local_pose.cpu().numpy()
-    global_input = torch.zeros(num_scenes, ngc, local_w, local_h)
+    global_input = torch.zeros(num_scenes, ngc, local_h, local_w)
     global_orientation = torch.zeros(num_scenes, 1).long()
 
     for e in range(num_scenes):
@@ -359,7 +362,8 @@ def main():
     global_goals = [[min(x, int(local_w - 1)), min(y, int(local_h - 1))]
                     for x, y in global_goals]
 
-    goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
+    # 目标地图同样使用[y, x]的二维数组
+    goal_maps = [np.zeros((local_h, local_w)) for _ in range(num_scenes)]
     found_goal = [0 for _ in range(num_scenes)]
 
     for e in range(num_scenes):
@@ -617,8 +621,8 @@ def main():
                                 int(c * 100.0 / args.map_resolution)]
 
                 lmb[e] = get_local_map_boundaries((loc_r, loc_c),
-                                                  (local_w, local_h),
-                                                  (full_w, full_h))
+                                                  (local_h, local_w),
+                                                  (full_h, full_w))
 
                 planner_pose_inputs[e, 3:] = lmb[e]
                 origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
@@ -700,7 +704,7 @@ def main():
         # ------------------------------------------------------------------
         # Update long-term goal if target object is found
         found_goal = [0 for _ in range(num_scenes)]
-        goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
+        goal_maps = [np.zeros((local_h, local_w)) for _ in range(num_scenes)]
 
         for e in range(num_scenes):
             # 使用 info['next'] 中的目标类别更新语义地图
