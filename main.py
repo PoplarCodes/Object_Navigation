@@ -383,14 +383,6 @@ def main():
             explored = (local_map[e, 1].cpu().numpy() > 0)
             frontier = free & binary_dilation(explored, disk(1)) & (~explored)
 
-            # 构造新颖度掩码，抑制重复访问
-            novelty = np.ones_like(free, dtype=np.float32)
-            if len(recent_goals[e]) > 0:
-                yy, xx = np.ogrid[:local_h, :local_w]
-                for px, py in recent_goals[e]:
-                    mask = (xx - px) ** 2 + (yy - py) ** 2 <= (args.goal_revisit_dist ** 2)
-                    novelty[mask] = 0
-
             # 对全局策略输出加入扰动，作为初始候选
             gx, gy = global_goals[e]
             shift = np.random.randint(-1, 2, size=2)
@@ -398,12 +390,13 @@ def main():
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
 
             masks = {'free': free, 'explored': explored,
-                     'frontier': frontier, 'novelty': novelty}
+                     'frontier': frontier}
 
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                # 使用房间先验细化长期目标
+                # 使用房间先验细化长期目标，内部会生成回访惩罚
                 gx, gy = refine_ltg_with_prior((gx, gy), prior, masks,
-                                              room_infer[e], recent_goals[e])
+                                              room_infer[e], recent_goals[e],
+                                              revisit_radius=args.goal_revisit_dist)
             else:
                 # 先验无效：若目标已探索则在前沿重新采样
                 if explored[gy, gx]:
@@ -738,20 +731,14 @@ def main():
                         gy, gx = nearest[np.random.choice(len(nearest))]
                         gx, gy = int(gx), int(gy)
 
-                # 计算新颖度掩码，抑制重复访问
-                novelty = np.ones_like(free, dtype=np.float32)
-                if len(recent_goals[e]) > 0:
-                    yy, xx = np.ogrid[:local_h, :local_w]
-                    for px, py in recent_goals[e]:
-                        mask = (xx - px) ** 2 + (yy - py) ** 2 <= (args.goal_revisit_dist ** 2)
-                        novelty[mask] = 0
 
                 masks = {'free': free, 'explored': explored,
-                         'frontier': frontier, 'novelty': novelty}
+                         'frontier': frontier}
 
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                     gx, gy = refine_ltg_with_prior((gx, gy), prior, masks,
-                                                  room_infer[e], recent_goals[e])
+                                                  room_infer[e], recent_goals[e],
+                                                  revisit_radius=args.goal_revisit_dist)
                 else:
                     if explored[gy, gx]:
                         frontier_coords = np.argwhere(frontier)

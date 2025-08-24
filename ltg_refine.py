@@ -88,13 +88,14 @@ def refine_ltg_with_prior(point: Tuple[int, int],
                           beta: float = 1.0,
                           gamma: float = 1.0,
                           sigma: float = 8.0,
-                          radius: int = 10) -> Tuple[int, int]:
+                          radius: int = 10,
+                          revisit_radius: float = 5.0) -> Tuple[int, int]:
     """封装接口：根据先验与多种掩码细化长期目标。
 
     参数:
         point:        PPO 给出的原始目标点 (x, y)
         prior:        房间先验热力图
-        masks:        包含 free/explored/frontier/novelty 的掩码字典
+        masks:        包含 free/explored/frontier 的掩码字典
         room_infer_obj: 房型推理器，可用于后续扩展（当前未使用）
         recent_goals:  历史目标列表，用于生成回访惩罚
         alpha,beta,gamma,sigma,radius: 调节各项权重与搜索范围
@@ -106,10 +107,18 @@ def refine_ltg_with_prior(point: Tuple[int, int],
     free = masks.get('free')
     explored = masks.get('explored')
     frontier = masks.get('frontier')
-    novelty = masks.get('novelty')
+    # -- 根据历史目标生成回访惩罚 --
+    novelty = np.ones_like(free, dtype=np.float32)
+    if len(recent_goals) > 0:
+        yy, xx = np.ogrid[:free.shape[0], :free.shape[1]]
+        for px, py in recent_goals:
+            # R(x,y) = 0 当与历史目标距离不超过 revisit_radius，避免目标反复跳动
+            mask = (xx - px) ** 2 + (yy - py) ** 2 <= (revisit_radius ** 2)
+            novelty[mask] = 0.0
 
     reachable = free.astype(np.bool_)
     explore_mask = (~explored).astype(np.float32)
+    # 回访惩罚项取值 [0,1]，取 0 时表示该区域近期已访问
     revisit_penalty = novelty.astype(np.float32)
 
     bx, by = _refine_core(point, prior, reachable, frontier,
