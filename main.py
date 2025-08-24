@@ -524,7 +524,7 @@ def main():
                         gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                         gx, gy = int(gx), int(gy)
             goal_maps[e][:, :] = 0
-            goal_maps[e][gx, gy] = 1
+            goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             goal_hold_steps[e] += 1
             recent_goals[e].append((gx, gy))
         else:
@@ -551,7 +551,7 @@ def main():
                         if frontier_coords.size > 0:
                             gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                             gx, gy = int(gx), int(gy)
-            goal_maps[e][gx, gy] = 1
+            goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             recent_goals[e].append((gx, gy))
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -864,7 +864,7 @@ def main():
                             gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                             gx, gy = int(gx), int(gy)
                 goal_maps[e][:, :] = 0
-                goal_maps[e][gx, gy] = 1
+                goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 goal_hold_steps[e] += 1
                 recent_goals[e].append((gx, gy))
             else:
@@ -891,7 +891,7 @@ def main():
                             if frontier_coords.size > 0:
                                 gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                                 gx, gy = int(gx), int(gy)
-                goal_maps[e][gx, gy] = 1
+                goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 recent_goals[e].append((gx, gy))
         # ------------------------------------------------------------------
 
