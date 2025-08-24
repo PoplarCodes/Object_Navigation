@@ -376,6 +376,9 @@ def main():
     goal_maps = [np.zeros((local_h, local_w)) for _ in range(num_scenes)]
     found_goal = [0 for _ in range(num_scenes)]
 
+    # 当前所有环境中智能体的局部坐标，用于后续距离计算
+    agent_locs = local_pose.cpu().numpy()
+
     for e in range(num_scenes):
         cn = infos[e]['goal_cat_id'] + 4
         if local_map[e, cn, :, :].sum() != 0.:
@@ -423,6 +426,21 @@ def main():
                         gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                         gx, gy = int(gx), int(gy)
 
+            # 计算目标与当前坐标的欧氏距离，过近则重新采样
+            r, c = agent_locs[e, 1], agent_locs[e, 0]
+            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                            int(c * 100.0 / args.map_resolution)]
+            dist = np.linalg.norm(np.array([gx, gy]) - np.array([loc_c, loc_r]))
+            if dist < args.min_goal_dist:
+                frontier_coords = np.argwhere(frontier)
+                if frontier_coords.size > 0:
+                    gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                else:
+                    free_coords = np.argwhere(free)
+                    if free_coords.size > 0:
+                        gy, gx = free_coords[np.random.choice(len(free_coords))]
+                gx, gy = int(gx), int(gy)
+
             goal_maps[e][:, :] = 0
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             recent_goals[e].append((gx, gy))
@@ -450,6 +468,22 @@ def main():
                         if frontier_coords.size > 0:
                             gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                             gx, gy = int(gx), int(gy)
+
+            # 若目标距离当前位置过近，则重新在前沿或自由空间采样
+            r, c = agent_locs[e, 1], agent_locs[e, 0]
+            loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                            int(c * 100.0 / args.map_resolution)]
+            dist = np.linalg.norm(np.array([gx, gy]) - np.array([loc_c, loc_r]))
+            if dist < args.min_goal_dist:
+                frontier_coords = np.argwhere(frontier)
+                if frontier_coords.size > 0:
+                    gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                else:
+                    free_coords = np.argwhere(free)
+                    if free_coords.size > 0:
+                        gy, gx = free_coords[np.random.choice(len(free_coords))]
+                gx, gy = int(gx), int(gy)
+
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             recent_goals[e].append((gx, gy))
     planner_inputs = [{} for e in range(num_scenes)]
@@ -724,6 +758,10 @@ def main():
         found_goal = [0 for _ in range(num_scenes)]
         goal_maps = [np.zeros((local_h, local_w)) for _ in range(num_scenes)]
 
+        # 当前所有环境中智能体的局部坐标，供距离检查使用
+        agent_locs = local_pose.cpu().numpy()
+
+
         for e in range(num_scenes):
             # 使用 info['next'] 中的目标类别更新语义地图
             cn = infos[e]['next']['goal_cat_id'] + 4
@@ -777,6 +815,22 @@ def main():
                         if frontier_coords.size > 0:
                             gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                             gx, gy = int(gx), int(gy)
+
+                # 检查与当前坐标的距离，过近则重新采样
+                r, c = agent_locs[e, 1], agent_locs[e, 0]
+                loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                int(c * 100.0 / args.map_resolution)]
+                dist = np.linalg.norm(np.array([gx, gy]) - np.array([loc_c, loc_r]))
+                if dist < args.min_goal_dist:
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                    else:
+                        free_coords = np.argwhere(free)
+                        if free_coords.size > 0:
+                            gy, gx = free_coords[np.random.choice(len(free_coords))]
+                    gx, gy = int(gx), int(gy)
+
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 recent_goals[e].append((gx, gy))
@@ -804,6 +858,22 @@ def main():
                             if frontier_coords.size > 0:
                                 gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                                 gx, gy = int(gx), int(gy)
+
+                # 若目标离自身过近则重新采样，避免原地打转
+                r, c = agent_locs[e, 1], agent_locs[e, 0]
+                loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
+                                int(c * 100.0 / args.map_resolution)]
+                dist = np.linalg.norm(np.array([gx, gy]) - np.array([loc_c, loc_r]))
+                if dist < args.min_goal_dist:
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                    else:
+                        free_coords = np.argwhere(free)
+                        if free_coords.size > 0:
+                            gy, gx = free_coords[np.random.choice(len(free_coords))]
+                    gx, gy = int(gx), int(gy)
+
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 recent_goals[e].append((gx, gy))
         # ------------------------------------------------------------------

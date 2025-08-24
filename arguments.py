@@ -161,7 +161,7 @@ def get_args():
                         help='最小房间面积，小于则并回邻居（平方米）')
     parser.add_argument('--room_vote_temp', type=float, default=1.0,
                         help='房型 softmax 温度')
-    parser.add_argument('--room_prior_decay', type=float, default=0.9,
+    parser.add_argument('--room_prior_decay', type=float, default=1,
                         help='对已探索充分房间的先验衰减系数 0~1')
     parser.add_argument('--room_prior_topk', type=int, default=2,
                         help='若>0，则从先验概率最高的Top-K像素中随机挑选目标')
@@ -178,6 +178,8 @@ def get_args():
                         help='记录最近长期目标的队列长度')
     parser.add_argument('--goal_revisit_dist', type=float, default=5.0,
                         help='若新目标与历史目标距离小于该阈值则重新采样（网格距离）')
+    parser.add_argument('--min_goal_dist', type=float, default=10.0,
+                        help='智能体与候选目标的最小距离阈值，过近则重新采样（网格距离）')
 
     # 长期目标细化相关超参数
     parser.add_argument('--ltg_gauss_sigma', type=float, default=8.0,
@@ -194,6 +196,7 @@ def get_args():
                         help='门带加成系数 δ')
     parser.add_argument('--ltg_novelty_weight', type=float, default=1.0,
                         help='回访惩罚权重')
+
     #添加参数来指定目标类别
     # parser.add_argument('--target_goal', type=int, default=0,
     #                     help='Target goal category (0 for chair)')
