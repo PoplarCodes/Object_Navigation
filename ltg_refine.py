@@ -1,7 +1,7 @@
 import numpy as np
+from typing import Optional, Tuple  # 引入类型注解所需的 Optional 与 Tuple
 
-
-def _refine_core(ppo_point: tuple,
+def _refine_core(ppo_point: Tuple[int, int],
                  prior: np.ndarray,
                  reachable: np.ndarray,
                  frontier: np.ndarray,
@@ -12,9 +12,9 @@ def _refine_core(ppo_point: tuple,
                  gamma: float,
                  sigma: float,
                  radius: int,
-                 door_band: np.ndarray | None = None,
+                 door_band: Optional[np.ndarray] = None,
                  other_room: bool = False,
-                 delta: float = 0.3):
+                 delta: float = 0.3) -> Tuple[int, int]:
     """核心实现：结合房间先验与多种掩码精炼长期目标点"""
     x, y = ppo_point
 
@@ -34,7 +34,7 @@ def _refine_core(ppo_point: tuple,
         s = x.sum()
         return x / s if s > 0 else x
 
-    def _search_best(H: np.ndarray) -> tuple[int, int]:
+    def _search_best(H: np.ndarray) -> Tuple[int, int]:
         """在半径 r 的圆盘内寻找最大值，若无则扩大到 2r，再无则退回前沿"""
         yy2, xx2 = np.ogrid[:h, :w]
 
@@ -78,7 +78,7 @@ def _refine_core(ppo_point: tuple,
 
     return bx, by
 
-def refine_ltg_with_prior(point: tuple,
+def refine_ltg_with_prior(point: Tuple[int, int],
                           prior: np.ndarray,
                           masks: dict,
                           room_infer_obj,
@@ -87,7 +87,7 @@ def refine_ltg_with_prior(point: tuple,
                           beta: float = 1.0,
                           gamma: float = 1.0,
                           sigma: float = 8.0,
-                          radius: int = 10) -> tuple:
+                          radius: int = 10) -> Tuple[int, int]:
     """封装接口：根据先验与多种掩码细化长期目标。
 
     参数:
