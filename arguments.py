@@ -179,6 +179,21 @@ def get_args():
     parser.add_argument('--goal_revisit_dist', type=float, default=5.0,
                         help='若新目标与历史目标距离小于该阈值则重新采样（网格距离）')
 
+    # 长期目标细化相关超参数
+    parser.add_argument('--ltg_gauss_sigma', type=float, default=8.0,
+                        help='高斯标准差（像素）')
+    parser.add_argument('--ltg_alpha', type=float, default=1.0,
+                        help='PoE 权重 α')
+    parser.add_argument('--ltg_beta', type=float, default=1.0,
+                        help='PoE 权重 β')
+    parser.add_argument('--ltg_gamma', type=float, default=1.0,
+                        help='PoE 权重 γ')
+    parser.add_argument('--ltg_radius', type=int, default=10,
+                        help='初始搜索半径（像素）')
+    parser.add_argument('--ltg_door_bonus', type=float, default=0.3,
+                        help='门带加成系数 δ')
+    parser.add_argument('--ltg_novelty_weight', type=float, default=1.0,
+                        help='回访惩罚权重')
     #添加参数来指定目标类别
     # parser.add_argument('--target_goal', type=int, default=0,
     #                     help='Target goal category (0 for chair)')
