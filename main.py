@@ -16,8 +16,9 @@ import algo
 import matplotlib.pyplot as plt  # 导入 Matplotlib 库
 from skimage.morphology import binary_dilation, binary_erosion, disk  # 形态学操作用于前沿提取
 from room_prior import build_online_room_infer_from_args  # 引入房间先验推理器构建函数
-
+from ltg_refine import refine_ltg_with_prior  # 导入长期目标细化函数
 os.environ["OMP_NUM_THREADS"] = "1"
+
 
 def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
                         fallback_goal, last_room_id: int, hold_steps: int,
