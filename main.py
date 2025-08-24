@@ -146,6 +146,9 @@ def main():
     # Local Map Boundaries
     lmb = np.zeros((num_scenes, 4)).astype(int)
 
+    # 记录上一帧局部地图边界，用于计算地图平移量
+    prev_lmb = np.zeros((num_scenes, 4)).astype(int)
+
     # Planner pose inputs has 7 dimensions
     # 1-3 store continuous global agent location
     # 4-7 store local map boundaries
@@ -198,6 +201,10 @@ def main():
             origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                           lmb[e][0] * args.map_resolution / 100.0, 0.]
 
+            # 初始化阶段同步上一帧边界
+            prev_lmb[e] = lmb[e].copy()
+
+
         for e in range(num_scenes):
             local_map[e] = full_map[e, :,
                            lmb[e, 0]:lmb[e, 1],
@@ -225,6 +232,9 @@ def main():
         planner_pose_inputs[e, 3:] = lmb[e]
         origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                       lmb[e][0] * args.map_resolution / 100.0, 0.]
+
+        # 环境重置后记录新的局部边界
+        prev_lmb[e] = lmb[e].copy()
 
         local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
         local_pose[e] = full_pose[e] - \
@@ -620,6 +630,21 @@ def main():
                 planner_pose_inputs[e, 3:] = lmb[e]
                 origins[e] = [lmb[e][2] * args.map_resolution / 100.0,
                               lmb[e][0] * args.map_resolution / 100.0, 0.]
+
+                # 计算地图平移量并更新历史目标坐标
+                dx = lmb[e][2] - prev_lmb[e][2]
+                dy = lmb[e][0] - prev_lmb[e][0]
+                if dx != 0 or dy != 0:
+                    new_goals = deque(maxlen=recent_goals[e].maxlen)
+                    for gx, gy in recent_goals[e]:
+                        ngx, ngy = gx - dx, gy - dy
+                        if 0 <= ngx < local_w and 0 <= ngy < local_h:
+                            new_goals.append((ngx, ngy))
+                    recent_goals[e] = new_goals
+
+                # 更新上一帧局部边界
+                prev_lmb[e] = lmb[e].copy()
+
 
                 local_map[e] = full_map[e, :,
                                lmb[e, 0]:lmb[e, 1],
