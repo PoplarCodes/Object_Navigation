@@ -20,115 +20,6 @@ from ltg_refine import refine_ltg_with_prior  # 导入长期目标细化函数
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
-def sample_goal_by_room(prior: np.ndarray, frontier: np.ndarray, room_infer_obj,
-                        fallback_goal, last_room_id: int, hold_steps: int,
-                        min_hold_steps: int, switch_ratio: float, topk: int,
-                        band_radius_m: float):
-    """依据房间先验、前沿与持有策略选择长期目标点。
-    参数:
-        prior:         归一化先验热力图
-        frontier:      当前的前沿掩码
-        room_infer_obj:房间推理器对象，提供房间像素集合
-        fallback_goal: 无法使用房间信息时回退的目标
-        last_room_id:  上一次选择的房间编号，-1 表示无
-        hold_steps:    当前房间已持续的步数
-        min_hold_steps:在此步数前若新房间优势不明显则保持旧房间
-        switch_ratio:  新房间权重需超过旧房间的倍数阈值
-        topk:          仅考虑概率最高的前 k 个房间，0 表示全部
-                band_radius_m: 膨胀半径（米），用于在房间边界附近寻找前沿
-
-    返回:
-        (x, y), 选定房间编号, 更新后的 hold_steps
-    """
-    if room_infer_obj is None or len(room_infer_obj.rooms) == 0:
-        return fallback_goal, last_room_id, hold_steps
-
-    # 解锁阈值：三倍最小持有步数或 60 步，取较大值
-    unlock_thresh = max(3 * min_hold_steps, 60)
-    # 若仅存在 1 个房间且已停留超过阈值，则直接回退到全局策略
-    if len(room_infer_obj.rooms) <= 1 and hold_steps >= unlock_thresh:
-        return fallback_goal, last_room_id, 0
-
-
-    # 计算各房间的累计概率作为权重
-    room_probs = np.array([
-        prior[r.pixels].sum() for r in room_infer_obj.rooms
-    ], dtype=np.float32)
-
-    # 仅保留概率最高的 topk 个房间，其余权重置零
-    if topk > 0 and len(room_probs) > topk:
-        top_idx = np.argsort(room_probs)[::-1][:topk]
-        mask_topk = np.zeros_like(room_probs)
-        mask_topk[top_idx] = 1
-        room_probs = room_probs * mask_topk
-
-    total = float(room_probs.sum())
-    if total <= 0:
-        return fallback_goal, last_room_id, hold_steps
-
-    # 选择概率最大的房间作为候选
-    best_rid = int(room_probs.argmax())
-    chosen_rid = best_rid
-
-    # 判断是否需要切换房间
-    if last_room_id is not None and last_room_id >= 0 and last_room_id < len(room_probs):
-        cur_w = room_probs[last_room_id]
-        new_w = room_probs[best_rid]
-        if best_rid != last_room_id and new_w <= cur_w * switch_ratio \
-                and hold_steps < min_hold_steps:
-            chosen_rid = last_room_id  # 持有旧房间
-        else:
-            hold_steps = 0  # 触发切换，重置计数
-
-    mask = room_infer_obj.rooms[chosen_rid].pixels
-
-    # 1) 构造“门宽尺度”的边界环带
-    r_min_px = max(int(0.5 * room_infer_obj.cfg.door_min_width_m /
-                       room_infer_obj.cfg.resolution_m), 1)
-    inner = binary_erosion(mask, disk(r_min_px))
-    outer = binary_dilation(mask, disk(r_min_px))
-    door_band = outer & (~inner)
-
-    # 2) 优先在门宽带与前沿的交集中采样
-    door_frontier = frontier & door_band
-    if door_frontier.any():
-        w = prior[door_frontier]
-        coords = np.argwhere(door_frontier)
-        w_sum = w.sum()
-        if w_sum > 0:
-            # 按先验权重采样门口前沿点
-            w = w / w_sum
-            y, x = coords[np.random.choice(len(coords), p=w)]
-        else:
-            # 若权重全为 0，则均匀采样
-            y, x = coords[np.random.choice(len(coords))]
-    else:
-        # 兜底：回到原来的膨胀带前沿采样
-        dil_px = max(int(band_radius_m / room_infer_obj.cfg.resolution_m), 1)
-        band_frontier = frontier & binary_dilation(mask, disk(dil_px))
-        if band_frontier.any():
-            w = prior[band_frontier]
-            coords = np.argwhere(band_frontier)
-            w_sum = w.sum()
-            if w_sum > 0:
-                # 按先验权重采样膨胀带前沿点
-                w = w / w_sum
-                y, x = coords[np.random.choice(len(coords), p=w)]
-            else:
-                # 若权重全为 0，则均匀采样
-                y, x = coords[np.random.choice(len(coords))]
-        else:
-            # 再兜底：房间内部最大值/质心
-            sub_prior = prior * mask
-            if sub_prior.sum() > 0:
-                y, x = np.unravel_index(sub_prior.argmax(), sub_prior.shape)
-            else:
-                coords = np.argwhere(mask)
-                if coords.size == 0:
-                    return fallback_goal, chosen_rid, hold_steps
-                y, x = coords.mean(axis=0).astype(int)
-
-    return (int(x), int(y)), chosen_rid, hold_steps
 
 def main():
     args = get_args()
@@ -203,9 +94,6 @@ def main():
 
     per_step_g_rewards = deque(maxlen=1000)
 
-    # 记录长期目标所选房间及其持续步数
-    last_room_ids = [-1 for _ in range(num_scenes)]  # 上一次的房间编号
-    goal_hold_steps = [0 for _ in range(num_scenes)]  # 当前房间已持有的步数
 
     # 记录每个环境最近的长期目标，避免重复访问
     recent_goals = [deque(maxlen=args.goal_history_size)
@@ -486,37 +374,40 @@ def main():
             prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
 
 
-            # 计算前沿掩码：free & dilate(explored) & ~explored
+            # 计算 free / explored / frontier 掩码
             free = (local_map[e, 0].cpu().numpy() == 0)
             explored = (local_map[e, 1].cpu().numpy() > 0)
             frontier = free & binary_dilation(explored, disk(1)) & (~explored)
 
-            # 先对全局策略输出加入扰动，作为像素级采样的后备方案
+            # 构造新颖度掩码，抑制重复访问
+            novelty = np.ones_like(free, dtype=np.float32)
+            if len(recent_goals[e]) > 0:
+                yy, xx = np.ogrid[:local_h, :local_w]
+                for px, py in recent_goals[e]:
+                    mask = (xx - px) ** 2 + (yy - py) ** 2 <= (args.goal_revisit_dist ** 2)
+                    novelty[mask] = 0
+
+            # 对全局策略输出加入扰动，作为初始候选
             gx, gy = global_goals[e]
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-            # 若全局策略给出的目标已被探索，则在前沿上重新采样
-            if explored[gy, gx]:
-                frontier_coords = np.argwhere(frontier)
-                if frontier_coords.size > 0:
-                    dists = np.linalg.norm(frontier_coords - np.array([gy, gx]), axis=1)
-                    nearest = frontier_coords[dists == dists.min()]
-                    gy, gx = nearest[np.random.choice(len(nearest))]
-                    gx, gy = int(gx), int(gy)
-            fallback = (gx, gy)
+
+            masks = {'free': free, 'explored': explored,
+                     'frontier': frontier, 'novelty': novelty}
+
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                # 房间级采样：考虑房间持有策略与前沿
-                (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
-                    sample_goal_by_room(prior, frontier, room_infer[e], fallback,
-                                        last_room_ids[e], goal_hold_steps[e],
-                                        args.min_goal_hold_steps,
-                                        args.goal_switch_ratio,
-                                        args.room_prior_topk,
-                                        args.frontier_band_radius_m)
+                # 使用房间先验细化长期目标
+                gx, gy = refine_ltg_with_prior((gx, gy), prior, masks,
+                                              room_infer[e], recent_goals[e])
             else:
-                gx, gy = fallback
-                # 若新目标过于接近历史目标，则在前沿重新采样
+                # 先验无效：若目标已探索则在前沿重新采样
+                if explored[gy, gx]:
+                    frontier_coords = np.argwhere(frontier)
+                    if frontier_coords.size > 0:
+                        gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                        gx, gy = int(gx), int(gy)
+                # 避免过近地重复访问历史目标
                 if recent_goals[e] and any(
                         np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
                         for p in recent_goals[e]):
@@ -524,9 +415,9 @@ def main():
                     if frontier_coords.size > 0:
                         gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                         gx, gy = int(gx), int(gy)
+
             goal_maps[e][:, :] = 0
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
-            goal_hold_steps[e] += 1
             recent_goals[e].append((gx, gy))
         else:
             explored = (local_map[e, 1].cpu().numpy() > 0)
@@ -654,9 +545,6 @@ def main():
                 wait_env[e] = 1.
                 update_intrinsic_rew(e)
                 init_map_and_pose_for_env(e)
-                # 重置房间持有状态，避免跨 episode 影响
-                last_room_ids[e] = -1
-                goal_hold_steps[e] = 0
                 # 清空历史目标队列，避免上一回合干扰
                 recent_goals[e].clear()
                 # 环境重置后立即调用房间推理器，写出上一轮数据并初始化新episode
@@ -845,18 +733,27 @@ def main():
                         nearest = frontier_coords[dists == dists.min()]
                         gy, gx = nearest[np.random.choice(len(nearest))]
                         gx, gy = int(gx), int(gy)
-                fallback = (gx, gy)
+
+                # 计算新颖度掩码，抑制重复访问
+                novelty = np.ones_like(free, dtype=np.float32)
+                if len(recent_goals[e]) > 0:
+                    yy, xx = np.ogrid[:local_h, :local_w]
+                    for px, py in recent_goals[e]:
+                        mask = (xx - px) ** 2 + (yy - py) ** 2 <= (args.goal_revisit_dist ** 2)
+                        novelty[mask] = 0
+
+                masks = {'free': free, 'explored': explored,
+                         'frontier': frontier, 'novelty': novelty}
+
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
-                    (gx, gy), last_room_ids[e], goal_hold_steps[e] = \
-                        sample_goal_by_room(prior, frontier, room_infer[e], fallback,
-                                            last_room_ids[e], goal_hold_steps[e],
-                                            args.min_goal_hold_steps,
-                                            args.goal_switch_ratio,
-                                            args.room_prior_topk,
-                                            args.frontier_band_radius_m)
+                    gx, gy = refine_ltg_with_prior((gx, gy), prior, masks,
+                                                  room_infer[e], recent_goals[e])
                 else:
-                    gx, gy = fallback
-                    # 判断与历史目标的距离，过近则重新从前沿采样
+                    if explored[gy, gx]:
+                        frontier_coords = np.argwhere(frontier)
+                        if frontier_coords.size > 0:
+                            gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
+                            gx, gy = int(gx), int(gy)
                     if recent_goals[e] and any(
                             np.linalg.norm(np.array([gx, gy]) - np.array(p)) < args.goal_revisit_dist
                             for p in recent_goals[e]):
@@ -866,7 +763,6 @@ def main():
                             gx, gy = int(gx), int(gy)
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
-                goal_hold_steps[e] += 1
                 recent_goals[e].append((gx, gy))
             else:
                 explored = (local_map[e, 1].cpu().numpy() > 0)

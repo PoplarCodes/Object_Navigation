@@ -1,40 +1,21 @@
 import numpy as np
 
 
-def refine_ltg_with_prior(ppo_point: tuple,
-                          prior: np.ndarray,
-                          reachable: np.ndarray,
-                          frontier: np.ndarray,
-                          explore_mask: np.ndarray,
-                          revisit_penalty: np.ndarray,
-                          alpha: float,
-                          beta: float,
-                          gamma: float,
-                          sigma: float,
-                          radius: int,
-                          door_band: np.ndarray | None = None,
-                          other_room: bool = False,
-                          delta: float = 0.3):
-    """结合房间先验与多种掩码精炼长期目标点。
-
-    参数:
-        ppo_point:    PPO 给出的初始目标点 (x, y)
-        prior:        房间先验热力图 [H,W]
-        reachable:    可达掩码
-        frontier:     前沿掩码
-        explore_mask: 探索度掩码（未探索区域权重大）
-        revisit_penalty: 回访惩罚掩码
-        alpha, beta, gamma: 各项权重指数
-        sigma:        高斯分布标准差
-        radius:       初始搜索半径
-        door_band:    门口环带掩码
-        other_room:   房型推理是否指向其他房间
-        delta:        门口加成倍率
-
-    返回:
-        (x, y) 处理后的长期目标点坐标
-    """
-
+def _refine_core(ppo_point: tuple,
+                 prior: np.ndarray,
+                 reachable: np.ndarray,
+                 frontier: np.ndarray,
+                 explore_mask: np.ndarray,
+                 revisit_penalty: np.ndarray,
+                 alpha: float,
+                 beta: float,
+                 gamma: float,
+                 sigma: float,
+                 radius: int,
+                 door_band: np.ndarray | None = None,
+                 other_room: bool = False,
+                 delta: float = 0.3):
+    """核心实现：结合房间先验与多种掩码精炼长期目标点"""
     x, y = ppo_point
 
     # -- Step1: 以 (x,y) 为中心构造二维高斯图 G --
@@ -95,4 +76,42 @@ def refine_ltg_with_prior(ppo_point: tuple,
             H2 = _norm((G ** beta) * (P2 ** alpha) * (M ** gamma))
             bx, by = _search_best(H2)
 
+    return bx, by
+
+def refine_ltg_with_prior(point: tuple,
+                          prior: np.ndarray,
+                          masks: dict,
+                          room_infer_obj,
+                          recent_goals,
+                          alpha: float = 1.0,
+                          beta: float = 1.0,
+                          gamma: float = 1.0,
+                          sigma: float = 8.0,
+                          radius: int = 10) -> tuple:
+    """封装接口：根据先验与多种掩码细化长期目标。
+
+    参数:
+        point:        PPO 给出的原始目标点 (x, y)
+        prior:        房间先验热力图
+        masks:        包含 free/explored/frontier/novelty 的掩码字典
+        room_infer_obj: 房型推理器，可用于后续扩展（当前未使用）
+        recent_goals:  历史目标列表，用于生成回访惩罚
+        alpha,beta,gamma,sigma,radius: 调节各项权重与搜索范围
+
+    返回:
+        细化后的 (x, y) 坐标
+    """
+
+    free = masks.get('free')
+    explored = masks.get('explored')
+    frontier = masks.get('frontier')
+    novelty = masks.get('novelty')
+
+    reachable = free.astype(np.bool_)
+    explore_mask = (~explored).astype(np.float32)
+    revisit_penalty = novelty.astype(np.float32)
+
+    bx, by = _refine_core(point, prior, reachable, frontier,
+                          explore_mask, revisit_penalty,
+                          alpha, beta, gamma, sigma, radius)
     return bx, by
