@@ -538,12 +538,15 @@ class VectorEnv:
         for e, write_fn in enumerate(self._connection_write_fns):
             write_fn((PLAN_ACT_AND_PREPROCESS, inputs[e]))
         results = []
-        for read_fn in self._connection_read_fns:
+        for idx, read_fn in enumerate(self._connection_read_fns):
             try:
                 results.append(read_fn())
             except EOFError:
-                # 子进程已意外退出，抛出更加明确的错误，方便定位问题
-                raise RuntimeError("子进程异常终止，请检查环境或子进程日志")
+                # 当某个子进程意外退出时，获取其退出码并在异常信息中提示具体的子进程编号
+                exit_code = self._workers[idx].exitcode
+                raise RuntimeError(
+                    f"子进程 {idx} 异常终止，退出码 {exit_code}，请检查该子进程日志"
+                )
         obs, rews, dones, infos = zip(*results)
         self._is_waiting = False
         return np.stack(obs), np.stack(rews), np.stack(dones), infos
