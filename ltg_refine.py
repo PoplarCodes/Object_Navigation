@@ -5,7 +5,6 @@ def _refine_core(ppo_point: Tuple[int, int],
                  prior: np.ndarray,
                  reachable: np.ndarray,
                  frontier: np.ndarray,
-                 explore_mask: np.ndarray,
                  revisit_penalty: np.ndarray,
                  alpha: float,
                  beta: float,
@@ -23,10 +22,10 @@ def _refine_core(ppo_point: Tuple[int, int],
     yy, xx = np.ogrid[:h, :w]
     G = np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2 * sigma ** 2))
 
-    # -- Step2: 生成综合掩码 M，结合可达、前沿、探索度与回访惩罚 --
+    # -- Step2: 生成综合掩码 M，结合可达、前沿与回访惩罚 --
+    #    frontier 本身已位于未探索区域，无需额外乘 (~explored)
     M = (reachable.astype(np.float32) *
          frontier.astype(np.float32) *
-         explore_mask.astype(np.float32) *
          revisit_penalty.astype(np.float32))
 
     def _norm(x: np.ndarray) -> np.ndarray:
@@ -51,49 +50,36 @@ def _refine_core(ppo_point: Tuple[int, int],
             best = _argmax_in_disk(radius * 2)
 
         if best is None:
-            f_coords = np.argwhere(frontier)
-            if f_coords.size > 0:
-                # 取出前沿处的先验值，命名为 prior_vals 避免与外部变量重名
-                prior_vals = prior[frontier]
-                if prior_vals.sum() > 0:
-                    idx = np.argmax(prior_vals)
-                    fy, fx = f_coords[idx]
+            # 进一步在“可达前沿”中挑选备选点
+            fr_coords = np.argwhere(frontier & reachable)
+            if fr_coords.size > 0:
+                fr_prior = prior[frontier & reachable]
+                if fr_prior.sum() > 0:
+                    # 有先验时选取先验最大的前沿点
+                    idx = np.argmax(fr_prior)
+                    fy, fx = fr_coords[idx]
                 else:
-                    fy, fx = f_coords[0]
+                    # 先验全零时，选距离 (x,y) 最近的前沿点
+                    dists = ((fr_coords - np.array([y, x])) ** 2).sum(axis=1)
+                    fy, fx = fr_coords[np.argmin(dists)]
+                best = (int(fx), int(fy))
                 best = (int(fx), int(fy))
 
         if best is None:
-            # 当无前沿或候选得分为零时，寻找距离 (x,y) 最近的可达栅格
+            # 找不到前沿时退化为搜索最近的可达栅格
             reachable_coords = np.argwhere(reachable)
             if reachable_coords.shape[0] > 0:
-                # 排除当前位置，避免目标落在自身或障碍上
-                diff_mask = ~((reachable_coords[:, 0] == y) & (reachable_coords[:, 1] == x))
+                diff_mask = ~((reachable_coords[:, 0] == y) &
+                              (reachable_coords[:, 1] == x))
                 reachable_diff = reachable_coords[diff_mask]
                 if reachable_diff.shape[0] > 0:
                     dists = ((reachable_diff - np.array([y, x])) ** 2).sum(axis=1)
-                    idx = np.argmin(dists)
-                    ry, rx = reachable_diff[idx]
-                else:
-                     # 可达集中仅包含当前位置，随机采样仍会得到自身
-                    idx = np.random.choice(reachable_coords.shape[0])
-                    ry, rx = reachable_coords[idx]
-                best = (int(rx), int(ry))
-            else:
-                best = (int(x), int(y))  # 无可达区域则退回 PPO 点
-
-        # 若仍与原点重合，再次尝试从可达集随机选取其他栅格
-        if best == (x, y):
-            reachable_coords = np.argwhere(reachable)
-            diff_mask = ~((reachable_coords[:, 0] == y) & (reachable_coords[:, 1] == x))
-            reachable_diff = reachable_coords[diff_mask]
-            if reachable_diff.shape[0] > 0:
-                idx = np.random.choice(reachable_diff.shape[0])
-                ry, rx = reachable_diff[idx]
-                best = (int(rx), int(ry))
-        # 兜底：理论上 best 不应为 None，如出现则退回原点避免解包错误
+                    ry, rx = reachable_diff[np.argmin(dists)]
+                    best = (int(rx), int(ry))
         if best is None:
+            # 若仍无备选，只能返回原点以防解包错误（理论上极少出现）
             best = (int(x), int(y))
-        return best  # 最终保证返回点位于可达区域，避免目标落在自身或障碍上
+        return best
 
     # -- Step3: 计算综合得分 H，并在圆盘内寻找最优点 --
     H = _norm((G ** beta) * (prior ** alpha) * (M ** gamma))
@@ -108,6 +94,13 @@ def _refine_core(ppo_point: Tuple[int, int],
             H2 = _norm((G ** beta) * (P2 ** alpha) * (M ** gamma))
             bx, by = _search_best(H2)
 
+    # -- Step5: 若选中点不在前沿上，则吸附到最近的可达前沿 --
+    if not frontier[by, bx]:
+        fr_coords = np.argwhere(frontier & reachable)
+        if fr_coords.shape[0] > 0:
+            dists = ((fr_coords - np.array([by, bx])) ** 2).sum(axis=1)
+            by2, bx2 = fr_coords[np.argmin(dists)]
+            bx, by = int(bx2), int(by2)
     return bx, by
 
 def refine_ltg_with_prior(point: Tuple[int, int],
@@ -119,7 +112,7 @@ def refine_ltg_with_prior(point: Tuple[int, int],
                           beta: float = 1.0,
                           gamma: float = 1.0,
                           sigma: float = 8.0,
-                          radius: int = 10,
+                          radius: int = 20,
                           revisit_radius: float = 5.0) -> Tuple[int, int]:
     """封装接口：根据先验与多种掩码细化长期目标。
 
@@ -148,11 +141,10 @@ def refine_ltg_with_prior(point: Tuple[int, int],
             novelty[mask] = 0.0
 
     reachable = free.astype(np.bool_)
-    explore_mask = (~explored).astype(np.float32)
     # 回访惩罚项取值 [0,1]，取 0 时表示该区域近期已访问
     revisit_penalty = novelty.astype(np.float32)
 
     bx, by = _refine_core(point, prior, reachable, frontier,
-                          explore_mask, revisit_penalty,
+                          revisit_penalty,
                           alpha, beta, gamma, sigma, radius)
     return bx, by

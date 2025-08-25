@@ -99,6 +99,12 @@ def main():
     recent_goals = [deque(maxlen=args.goal_history_size)
                     for _ in range(num_scenes)]
 
+    # 记录当前采用的 LTG 及其已保持步数，用于减少频繁切换
+    current_ltgs = [None for _ in range(num_scenes)]  # 保存最近一次细化后的 LTG
+    ltg_keep_steps = [0 for _ in range(num_scenes)]   # 已保持的步数计数
+    MIN_LTG_STEPS = 8    # 最小保持步数阈值
+    MIN_LTG_DIST = 10    # 最小切换距离阈值（像素）
+
     g_process_rewards = np.zeros((num_scenes))
 
     # 初始化房间先验推理器，每个环境一个实例
@@ -396,8 +402,23 @@ def main():
             explored = (local_map[e, 1].cpu().numpy() > 0)
             frontier = free & binary_dilation(explored, disk(1)) & (~explored)
 
-            # 对全局策略输出加入扰动，作为初始候选
+            # 读取 PPO 给出的原始目标
             gx, gy = global_goals[e]
+            # 判定是否允许切换到新的 LTG
+            switch = True
+            if current_ltgs[e] is not None:
+                dist_last = np.linalg.norm(np.array([gx, gy]) - np.array(current_ltgs[e]))
+                if ltg_keep_steps[e] < MIN_LTG_STEPS or dist_last < MIN_LTG_DIST:
+                    switch = False
+
+            if not switch:
+                # 未满足门槛：沿用上一次目标并累积保持步数
+                gx, gy = current_ltgs[e]
+                ltg_keep_steps[e] += 1
+                goal_maps[e][gy, gx] = 1
+                continue
+
+            # 允许切换：只在此时加入一次随机扰动
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
@@ -443,12 +464,26 @@ def main():
 
             goal_maps[e][:, :] = 0
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
+            current_ltgs[e] = (gx, gy)
+            ltg_keep_steps[e] = 0
             recent_goals[e].append((gx, gy))
         else:
             explored = (local_map[e, 1].cpu().numpy() > 0)
             free = (local_map[e, 0].cpu().numpy() == 0)
             frontier = free & binary_dilation(explored, disk(1)) & (~explored)
             gx, gy = global_goals[e]
+            switch = True
+            if current_ltgs[e] is not None:
+                dist_last = np.linalg.norm(np.array([gx, gy]) - np.array(current_ltgs[e]))
+                if ltg_keep_steps[e] < MIN_LTG_STEPS or dist_last < MIN_LTG_DIST:
+                    switch = False
+
+            if not switch:
+                gx, gy = current_ltgs[e]
+                ltg_keep_steps[e] += 1
+                goal_maps[e][gy, gx] = 1
+                continue
+
             # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
             shift = np.random.randint(-1, 2, size=2)
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
@@ -485,6 +520,8 @@ def main():
                 gx, gy = int(gx), int(gy)
 
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
+            current_ltgs[e] = (gx, gy)
+            ltg_keep_steps[e] = 0
             recent_goals[e].append((gx, gy))
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -588,6 +625,8 @@ def main():
                 init_map_and_pose_for_env(e)
                 # 清空历史目标队列，避免上一回合干扰
                 recent_goals[e].clear()
+                current_ltgs[e] = None  # 重置长期目标记录
+                ltg_keep_steps[e] = 0    # 重置保持步数
                 # 环境重置后立即调用房间推理器，写出上一轮数据并初始化新episode
                 traversible = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
@@ -773,19 +812,29 @@ def main():
                 found_goal[e] = 1
             elif getattr(args, 'use_room_prior', False):
                 prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
-                # np.save(os.path.join(room_prior_dir, f'room_prior_env{e}_step{g_step}.npy'), prior)  # 保存先验热力图以检查房型推理效果
 
                 # 计算前沿掩码，鼓励向未探索区域前进
                 free = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 frontier = free & binary_dilation(explored, disk(1)) & (~explored)
 
-                # 预先对全局策略输出加入扰动，作为像素级采样的后备方案
                 gx, gy = global_goals[e]
+                switch = True
+                if current_ltgs[e] is not None:
+                    dist_last = np.linalg.norm(np.array([gx, gy]) - np.array(current_ltgs[e]))
+                    if ltg_keep_steps[e] < MIN_LTG_STEPS or dist_last < MIN_LTG_DIST:
+                        switch = False
+
+                if not switch:
+                    gx, gy = current_ltgs[e]
+                    ltg_keep_steps[e] += 1
+                    goal_maps[e][gy, gx] = 1
+                    continue
+
+                # 仅在切换时加入随机扰动
                 shift = np.random.randint(-1, 2, size=2)
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
                 gy = int(np.clip(gy + shift[1], 0, local_h - 1))
-                # 若目标落在已探索区域，则重新在前沿采样
                 if explored[gy, gx]:
                     frontier_coords = np.argwhere(frontier)
                     if frontier_coords.size > 0:
@@ -793,7 +842,6 @@ def main():
                         nearest = frontier_coords[dists == dists.min()]
                         gy, gx = nearest[np.random.choice(len(nearest))]
                         gx, gy = int(gx), int(gy)
-
 
                 masks = {'free': free, 'explored': explored,
                          'frontier': frontier}
@@ -833,12 +881,26 @@ def main():
 
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
+                current_ltgs[e] = (gx, gy)
+                ltg_keep_steps[e] = 0
                 recent_goals[e].append((gx, gy))
             else:
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 free = (local_map[e, 0].cpu().numpy() == 0)
                 frontier = free & binary_dilation(explored, disk(1)) & (~explored)
                 gx, gy = global_goals[e]
+                switch = True
+                if current_ltgs[e] is not None:
+                    dist_last = np.linalg.norm(np.array([gx, gy]) - np.array(current_ltgs[e]))
+                    if ltg_keep_steps[e] < MIN_LTG_STEPS or dist_last < MIN_LTG_DIST:
+                        switch = False
+
+                if not switch:
+                    gx, gy = current_ltgs[e]
+                    ltg_keep_steps[e] += 1
+                    goal_maps[e][gy, gx] = 1
+                    continue
+
                 # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
                 shift = np.random.randint(-1, 2, size=2)
                 gx = int(np.clip(gx + shift[0], 0, local_w - 1))
@@ -875,6 +937,8 @@ def main():
                     gx, gy = int(gx), int(gy)
 
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
+                current_ltgs[e] = (gx, gy)
+                ltg_keep_steps[e] = 0
                 recent_goals[e].append((gx, gy))
         # ------------------------------------------------------------------
 

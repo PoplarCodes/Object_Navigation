@@ -190,7 +190,7 @@ def get_args():
                         help='PoE 权重 β')
     parser.add_argument('--ltg_gamma', type=float, default=1.0,
                         help='PoE 权重 γ')
-    parser.add_argument('--ltg_radius', type=int, default=10,
+    parser.add_argument('--ltg_radius', type=int, default=20,
                         help='初始搜索半径（像素）')
     parser.add_argument('--ltg_door_bonus', type=float, default=0.3,
                         help='门带加成系数 δ')
