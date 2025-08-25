@@ -79,36 +79,21 @@ def _refine_core(ppo_point: Tuple[int, int],
                     ry, rx = reachable_coords[idx]
                 best = (int(rx), int(ry))
             else:
-                # 当无前沿或候选得分为零时，寻找距离 (x,y) 最近的可达栅格
-                reachable_coords = np.argwhere(reachable)
-                if reachable_coords.size > 0:
-                    # 排除当前位置，避免目标落在自身或障碍上
-                    diff_mask = ~((reachable_coords[:, 0] == y) & (reachable_coords[:, 1] == x))
-                    reachable_diff = reachable_coords[diff_mask]
-                    if reachable_diff.size > 0:
-                        dists = ((reachable_diff - np.array([y, x])) ** 2).sum(axis=1)
-                        idx = np.argmin(dists)
-                        ry, rx = reachable_diff[idx]
-                        best = (int(rx), int(ry))
-                    else:
-                        # 可达集中仅包含当前位置，随机采样仍会得到自身
-                        idx = np.random.choice(len(reachable_coords))
-                        ry, rx = reachable_coords[idx]
-                        best = (int(rx), int(ry))
-                else:
-                    best = (int(x), int(y))  # 无可达区域则退回 PPO 点
+                best = (int(x), int(y))  # 无可达区域则退回 PPO 点
 
-                    # 若仍与原点重合，再次尝试从可达集随机选取其他栅格
-                if best == (x, y):
-                    reachable_coords = np.argwhere(reachable)
-                    diff_mask = ~((reachable_coords[:, 0] == y) & (reachable_coords[:, 1] == x))
-                    reachable_diff = reachable_coords[diff_mask]
-                    if reachable_diff.shape[0] > 0:
-                        idx = np.random.choice(reachable_diff.shape[0])
-                        ry, rx = reachable_diff[idx]
-                        best = (int(rx), int(ry))
-
-                return best  # 最终保证返回点位于可达区域，避免目标落在自身或障碍上
+        # 若仍与原点重合，再次尝试从可达集随机选取其他栅格
+        if best == (x, y):
+            reachable_coords = np.argwhere(reachable)
+            diff_mask = ~((reachable_coords[:, 0] == y) & (reachable_coords[:, 1] == x))
+            reachable_diff = reachable_coords[diff_mask]
+            if reachable_diff.shape[0] > 0:
+                idx = np.random.choice(reachable_diff.shape[0])
+                ry, rx = reachable_diff[idx]
+                best = (int(rx), int(ry))
+        # 兜底：理论上 best 不应为 None，如出现则退回原点避免解包错误
+        if best is None:
+            best = (int(x), int(y))
+        return best  # 最终保证返回点位于可达区域，避免目标落在自身或障碍上
 
     # -- Step3: 计算综合得分 H，并在圆盘内寻找最优点 --
     H = _norm((G ** beta) * (prior ** alpha) * (M ** gamma))
