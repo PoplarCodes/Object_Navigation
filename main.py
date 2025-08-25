@@ -170,8 +170,15 @@ def main():
 
     def check_no_progress(e, free, gx, gy, loc_r, loc_c, switched):
         """检测目标无进展并更新黑名单"""
+        # 将目标和当前位置裁剪到地图边界内，避免访问越界
+        gy = int(np.clip(gy, 0, free.shape[0] - 1))
+        gx = int(np.clip(gx, 0, free.shape[1] - 1))
+        loc_r = int(np.clip(loc_r, 0, free.shape[0] - 1))
+        loc_c = int(np.clip(loc_c, 0, free.shape[1] - 1))
+
         planner = FMMPlanner(free.astype(np.float32))  # 构建FMM规划器
         planner.set_goal((gy, gx), auto_improve=False)
+        # 将坐标限制在合法范围，避免访问越界
         fmm_d = planner.fmm_dist[loc_r, loc_c]
         if switched:
             no_progress_cnt[e] = 0  # 切换目标时重置计数
