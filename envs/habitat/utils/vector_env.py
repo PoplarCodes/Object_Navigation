@@ -412,7 +412,11 @@ class VectorEnv:
 
         if self._is_waiting:
             for read_fn in self._connection_read_fns:
-                read_fn()
+                try:
+                    read_fn()
+                except EOFError:
+                    # 子进程可能已经结束，此处忽略 EOFError 以确保顺利关闭
+                    pass
 
         for write_fn in self._connection_write_fns:
             write_fn((CLOSE_COMMAND, None))
@@ -535,7 +539,11 @@ class VectorEnv:
             write_fn((PLAN_ACT_AND_PREPROCESS, inputs[e]))
         results = []
         for read_fn in self._connection_read_fns:
-            results.append(read_fn())
+            try:
+                results.append(read_fn())
+            except EOFError:
+                # 子进程已意外退出，抛出更加明确的错误，方便定位问题
+                raise RuntimeError("子进程异常终止，请检查环境或子进程日志")
         obs, rews, dones, infos = zip(*results)
         self._is_waiting = False
         return np.stack(obs), np.stack(rews), np.stack(dones), infos
