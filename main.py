@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt  # 导入 Matplotlib 库
 from skimage.morphology import binary_dilation, binary_erosion, disk  # 形态学操作用于前沿提取
 from room_prior import build_online_room_infer_from_args  # 引入房间先验推理器构建函数
 from ltg_refine import refine_ltg_with_prior  # 导入长期目标细化函数
+from envs.utils.fmm_planner import FMMPlanner  # 引入FMM规划器用于无进展检测
 os.environ["OMP_NUM_THREADS"] = "1"
 
 
@@ -102,8 +103,8 @@ def main():
     # 记录当前采用的 LTG 及其已保持步数，用于减少频繁切换
     current_ltgs = [None for _ in range(num_scenes)]  # 保存最近一次细化后的 LTG
     ltg_keep_steps = [0 for _ in range(num_scenes)]   # 已保持的步数计数
-    MIN_LTG_STEPS = 8    # 最小保持步数阈值
-    MIN_LTG_DIST = 10    # 最小切换距离阈值（像素）
+    MIN_LTG_STEPS = 15    # 最小保持步数阈值
+    MIN_LTG_DIST = 20    # 最小切换距离阈值（像素）
 
     g_process_rewards = np.zeros((num_scenes))
 
@@ -159,6 +160,31 @@ def main():
     # 1-3 store continuous global agent location
     # 4-7 store local map boundaries
     planner_pose_inputs = np.zeros((num_scenes, 7))
+
+    # ---------------- 无进展检测相关变量 ----------------
+    no_progress_cnt = [0 for _ in range(num_scenes)]  # 连续无进展步数计数
+    last_fmm_distance = [None for _ in range(num_scenes)]  # 上一次FMM距离
+    ban_masks = [np.zeros((local_h, local_w), np.uint8) for _ in range(num_scenes)]  # 临时黑名单掩码
+    ban_decay_steps = 20  # 黑名单维持步数
+    ban_radius = 8  # 黑名单半径（像素）
+
+    def check_no_progress(e, free, gx, gy, loc_r, loc_c, switched):
+        """检测目标无进展并更新黑名单"""
+        planner = FMMPlanner(free.astype(np.float32))  # 构建FMM规划器
+        planner.set_goal((gy, gx), auto_improve=False)
+        fmm_d = planner.fmm_dist[loc_r, loc_c]
+        if switched:
+            no_progress_cnt[e] = 0  # 切换目标时重置计数
+        elif last_fmm_distance[e] is not None and fmm_d >= last_fmm_distance[e] - 1.0:
+            no_progress_cnt[e] += 1  # 无明显进展
+        else:
+            no_progress_cnt[e] = 0  # 有进展立即归零
+        last_fmm_distance[e] = fmm_d
+        if no_progress_cnt[e] >= 6:
+            yy, xx = np.ogrid[:local_h, :local_w]
+            mask = (xx - gx)**2 + (yy - gy)**2 <= ban_radius**2
+            ban_masks[e][mask] = ban_decay_steps  # 将该区域加入黑名单
+            no_progress_cnt[e] = 0
 
     # 计算局部地图边界
     def get_local_map_boundaries(agent_loc, local_sizes, full_sizes):
@@ -424,6 +450,11 @@ def main():
             # 只保留可达前沿，避免被墙壁隔离的自由空间
             frontier &= reachable
 
+            # 将临时黑名单作用于先验与前沿，并逐步衰减
+            prior[ban_masks[e] > 0] = 0.0  # 黑名单区域概率清零
+            frontier[ban_masks[e] > 0] = False  # 前沿中移除黑名单像素
+            ban_masks[e][ban_masks[e] > 0] -= 1
+
             # 读取 PPO 给出的原始目标
             gx, gy = global_goals[e]
             # 判定是否允许切换到新的 LTG
@@ -434,10 +465,18 @@ def main():
                     switch = False
 
             if not switch:
-                # 未满足门槛：沿用上一次目标并累积保持步数
                 gx, gy = current_ltgs[e]
-                ltg_keep_steps[e] += 1
+                # 若旧目标不在前沿上，则吸附到最近前沿像素
+                if not frontier[gy, gx]:
+                    fr = np.argwhere(frontier)
+                    if fr.size > 0:
+                        d2 = ((fr - np.array([gy, gx]))**2).sum(axis=1)
+                        gy, gx = fr[np.argmin(d2)]
+                # 无进展检测并更新黑名单
+                check_no_progress(e, free, gx, gy, loc_r, loc_c, False)
                 goal_maps[e][gy, gx] = 1
+                current_ltgs[e] = (gx, gy)
+                ltg_keep_steps[e] += 1
                 continue
 
             # 允许切换：只在此时加入一次随机扰动
@@ -485,6 +524,9 @@ def main():
                         gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                 gx, gy = int(gx), int(gy)
 
+            # 无进展检测，切换到新目标时传入 True
+            check_no_progress(e, free, gx, gy, loc_r, loc_c, True)
+
             goal_maps[e][:, :] = 0
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             current_ltgs[e] = (gx, gy)
@@ -514,6 +556,8 @@ def main():
                                 dq.append((ny, nx))
 
             frontier &= reachable  # 仅保留可达前沿
+            frontier[ban_masks[e] > 0] = False  # 黑名单区域不再作为前沿
+            ban_masks[e][ban_masks[e] > 0] -= 1
             gx, gy = global_goals[e]
             switch = True
             if current_ltgs[e] is not None:
@@ -523,8 +567,15 @@ def main():
 
             if not switch:
                 gx, gy = current_ltgs[e]
-                ltg_keep_steps[e] += 1
+                if not frontier[gy, gx]:
+                    fr = np.argwhere(frontier)
+                    if fr.size > 0:
+                        d2 = ((fr - np.array([gy, gx]))**2).sum(axis=1)
+                        gy, gx = fr[np.argmin(d2)]
+                check_no_progress(e, free, gx, gy, loc_r, loc_c, False)
                 goal_maps[e][gy, gx] = 1
+                current_ltgs[e] = (gx, gy)
+                ltg_keep_steps[e] += 1
                 continue
 
             # 对全局策略输出位置加入随机扰动进行概率采样，鼓励探索
@@ -561,6 +612,8 @@ def main():
                     if reachable_coords.size > 0:
                         gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                 gx, gy = int(gx), int(gy)
+
+            check_no_progress(e, free, gx, gy, loc_r, loc_c, True)
 
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
             current_ltgs[e] = (gx, gy)
@@ -880,6 +933,10 @@ def main():
                                     dq.append((ny, nx))
 
                 frontier &= reachable  # 仅保留可达前沿
+                # 黑名单：将被禁区域从先验与前沿中移除并衰减
+                prior[ban_masks[e] > 0] = 0.0
+                frontier[ban_masks[e] > 0] = False
+                ban_masks[e][ban_masks[e] > 0] -= 1
 
                 gx, gy = global_goals[e]
                 switch = True
@@ -890,6 +947,14 @@ def main():
 
                 if not switch:
                     gx, gy = current_ltgs[e]
+                    if not frontier[gy, gx]:
+                        fr = np.argwhere(frontier)
+                        if fr.size > 0:
+                            d2 = ((fr - np.array([gy, gx]))**2).sum(axis=1)
+                            gy, gx = fr[np.argmin(d2)]
+                    check_no_progress(e, free, gx, gy, loc_r, loc_c, False)
+                    goal_maps[e][gy, gx] = 1
+                    current_ltgs[e] = (gx, gy)
                     ltg_keep_steps[e] += 1
                     goal_maps[e][gy, gx] = 1
                     continue
@@ -942,6 +1007,7 @@ def main():
                             gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                     gx, gy = int(gx), int(gy)
 
+                check_no_progress(e, free, gx, gy, loc_r, loc_c, True)
                 goal_maps[e][:, :] = 0
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 current_ltgs[e] = (gx, gy)
@@ -970,6 +1036,8 @@ def main():
                                     dq.append((ny, nx))
 
                 frontier &= reachable  # 仅保留可达前沿
+                frontier[ban_masks[e] > 0] = False
+                ban_masks[e][ban_masks[e] > 0] -= 1
                 gx, gy = global_goals[e]
                 switch = True
                 if current_ltgs[e] is not None:
@@ -979,6 +1047,14 @@ def main():
 
                 if not switch:
                     gx, gy = current_ltgs[e]
+                    if not frontier[gy, gx]:
+                        fr = np.argwhere(frontier)
+                        if fr.size > 0:
+                            d2 = ((fr - np.array([gy, gx]))**2).sum(axis=1)
+                            gy, gx = fr[np.argmin(d2)]
+                    check_no_progress(e, free, gx, gy, loc_r, loc_c, False)
+                    goal_maps[e][gy, gx] = 1
+                    current_ltgs[e] = (gx, gy)
                     ltg_keep_steps[e] += 1
                     goal_maps[e][gy, gx] = 1
                     continue
@@ -1018,6 +1094,7 @@ def main():
                             gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                     gx, gy = int(gx), int(gy)
 
+                check_no_progress(e, free, gx, gy, loc_r, loc_c, True)
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
                 current_ltgs[e] = (gx, gy)
                 ltg_keep_steps[e] = 0
