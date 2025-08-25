@@ -400,7 +400,29 @@ def main():
             # 计算 free / explored / frontier 掩码
             free = (local_map[e, 0].cpu().numpy() == 0)
             explored = (local_map[e, 1].cpu().numpy() > 0)
-            frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+            # 根据参数将已探索区域膨胀一定带宽，得到更厚的前沿带
+            band_px = max(1, int(round(args.frontier_band_radius_m * 100.0 / args.map_resolution)))
+            frontier = free & binary_dilation(explored, disk(band_px)) & (~explored)
+
+            # 从智能体当前位置出发执行 BFS，获取真实可达区域
+            r, c = agent_locs[e, 1], agent_locs[e, 0]
+            loc_r = int(r * 100.0 / args.map_resolution)
+            loc_c = int(c * 100.0 / args.map_resolution)
+            reachable = np.zeros_like(free, dtype=bool)
+            dq = deque()
+            if 0 <= loc_r < free.shape[0] and 0 <= loc_c < free.shape[1] and free[loc_r, loc_c]:
+                reachable[loc_r, loc_c] = True
+                dq.append((loc_r, loc_c))
+                while dq:
+                    y, x = dq.popleft()
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                        if 0 <= ny < free.shape[0] and 0 <= nx < free.shape[1]:
+                            if free[ny, nx] and not reachable[ny, nx]:
+                                reachable[ny, nx] = True
+                                dq.append((ny, nx))
+
+            # 只保留可达前沿，避免被墙壁隔离的自由空间
+            frontier &= reachable
 
             # 读取 PPO 给出的原始目标
             gx, gy = global_goals[e]
@@ -423,8 +445,9 @@ def main():
             gx = int(np.clip(gx + shift[0], 0, local_w - 1))
             gy = int(np.clip(gy + shift[1], 0, local_h - 1))
 
+            # 打包各种掩码供细化函数使用
             masks = {'free': free, 'explored': explored,
-                     'frontier': frontier}
+                     'frontier': frontier, 'reachable': reachable}
 
             if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                 # 使用房间先验细化长期目标，内部会生成回访惩罚
@@ -457,9 +480,9 @@ def main():
                 if frontier_coords.size > 0:
                     gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                 else:
-                    free_coords = np.argwhere(free)
-                    if free_coords.size > 0:
-                        gy, gx = free_coords[np.random.choice(len(free_coords))]
+                    reachable_coords = np.argwhere(reachable)
+                    if reachable_coords.size > 0:
+                        gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                 gx, gy = int(gx), int(gy)
 
             goal_maps[e][:, :] = 0
@@ -470,7 +493,27 @@ def main():
         else:
             explored = (local_map[e, 1].cpu().numpy() > 0)
             free = (local_map[e, 0].cpu().numpy() == 0)
-            frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+            # 计算更厚的前沿并获取可达域
+            band_px = max(1, int(round(args.frontier_band_radius_m * 100.0 / args.map_resolution)))
+            frontier = free & binary_dilation(explored, disk(band_px)) & (~explored)
+
+            r, c = agent_locs[e, 1], agent_locs[e, 0]
+            loc_r = int(r * 100.0 / args.map_resolution)
+            loc_c = int(c * 100.0 / args.map_resolution)
+            reachable = np.zeros_like(free, dtype=bool)
+            dq = deque()
+            if 0 <= loc_r < free.shape[0] and 0 <= loc_c < free.shape[1] and free[loc_r, loc_c]:
+                reachable[loc_r, loc_c] = True
+                dq.append((loc_r, loc_c))
+                while dq:
+                    y, x = dq.popleft()
+                    for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                        if 0 <= ny < free.shape[0] and 0 <= nx < free.shape[1]:
+                            if free[ny, nx] and not reachable[ny, nx]:
+                                reachable[ny, nx] = True
+                                dq.append((ny, nx))
+
+            frontier &= reachable  # 仅保留可达前沿
             gx, gy = global_goals[e]
             switch = True
             if current_ltgs[e] is not None:
@@ -514,9 +557,9 @@ def main():
                 if frontier_coords.size > 0:
                     gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                 else:
-                    free_coords = np.argwhere(free)
-                    if free_coords.size > 0:
-                        gy, gx = free_coords[np.random.choice(len(free_coords))]
+                    reachable_coords = np.argwhere(reachable)
+                    if reachable_coords.size > 0:
+                        gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                 gx, gy = int(gx), int(gy)
 
             goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标
@@ -816,7 +859,27 @@ def main():
                 # 计算前沿掩码，鼓励向未探索区域前进
                 free = (local_map[e, 0].cpu().numpy() == 0)
                 explored = (local_map[e, 1].cpu().numpy() > 0)
-                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+                band_px = max(1, int(round(args.frontier_band_radius_m * 100.0 / args.map_resolution)))
+                frontier = free & binary_dilation(explored, disk(band_px)) & (~explored)
+
+                # 以智能体位置为起点计算可达区域
+                r, c = agent_locs[e, 1], agent_locs[e, 0]
+                loc_r = int(r * 100.0 / args.map_resolution)
+                loc_c = int(c * 100.0 / args.map_resolution)
+                reachable = np.zeros_like(free, dtype=bool)
+                dq = deque()
+                if 0 <= loc_r < free.shape[0] and 0 <= loc_c < free.shape[1] and free[loc_r, loc_c]:
+                    reachable[loc_r, loc_c] = True
+                    dq.append((loc_r, loc_c))
+                    while dq:
+                        y, x = dq.popleft()
+                        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                            if 0 <= ny < free.shape[0] and 0 <= nx < free.shape[1]:
+                                if free[ny, nx] and not reachable[ny, nx]:
+                                    reachable[ny, nx] = True
+                                    dq.append((ny, nx))
+
+                frontier &= reachable  # 仅保留可达前沿
 
                 gx, gy = global_goals[e]
                 switch = True
@@ -844,7 +907,7 @@ def main():
                         gx, gy = int(gx), int(gy)
 
                 masks = {'free': free, 'explored': explored,
-                         'frontier': frontier}
+                         'frontier': frontier, 'reachable': reachable}
 
                 if prior.shape == goal_maps[e].shape and prior.sum() > 0:
                     gx, gy = refine_ltg_with_prior((gx, gy), prior, masks,
@@ -874,9 +937,9 @@ def main():
                     if frontier_coords.size > 0:
                         gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                     else:
-                        free_coords = np.argwhere(free)
-                        if free_coords.size > 0:
-                            gy, gx = free_coords[np.random.choice(len(free_coords))]
+                        reachable_coords = np.argwhere(reachable)
+                        if reachable_coords.size > 0:
+                            gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                     gx, gy = int(gx), int(gy)
 
                 goal_maps[e][:, :] = 0
@@ -887,7 +950,26 @@ def main():
             else:
                 explored = (local_map[e, 1].cpu().numpy() > 0)
                 free = (local_map[e, 0].cpu().numpy() == 0)
-                frontier = free & binary_dilation(explored, disk(1)) & (~explored)
+                band_px = max(1, int(round(args.frontier_band_radius_m * 100.0 / args.map_resolution)))
+                frontier = free & binary_dilation(explored, disk(band_px)) & (~explored)
+
+                r, c = agent_locs[e, 1], agent_locs[e, 0]
+                loc_r = int(r * 100.0 / args.map_resolution)
+                loc_c = int(c * 100.0 / args.map_resolution)
+                reachable = np.zeros_like(free, dtype=bool)
+                dq = deque()
+                if 0 <= loc_r < free.shape[0] and 0 <= loc_c < free.shape[1] and free[loc_r, loc_c]:
+                    reachable[loc_r, loc_c] = True
+                    dq.append((loc_r, loc_c))
+                    while dq:
+                        y, x = dq.popleft()
+                        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                            if 0 <= ny < free.shape[0] and 0 <= nx < free.shape[1]:
+                                if free[ny, nx] and not reachable[ny, nx]:
+                                    reachable[ny, nx] = True
+                                    dq.append((ny, nx))
+
+                frontier &= reachable  # 仅保留可达前沿
                 gx, gy = global_goals[e]
                 switch = True
                 if current_ltgs[e] is not None:
@@ -931,9 +1013,9 @@ def main():
                     if frontier_coords.size > 0:
                         gy, gx = frontier_coords[np.random.choice(len(frontier_coords))]
                     else:
-                        free_coords = np.argwhere(free)
-                        if free_coords.size > 0:
-                            gy, gx = free_coords[np.random.choice(len(free_coords))]
+                        reachable_coords = np.argwhere(reachable)
+                        if reachable_coords.size > 0:
+                            gy, gx = reachable_coords[np.random.choice(len(reachable_coords))]
                     gx, gy = int(gx), int(gy)
 
                 goal_maps[e][gy, gx] = 1  # 以行y列x顺序写入目标

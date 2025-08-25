@@ -119,7 +119,7 @@ def refine_ltg_with_prior(point: Tuple[int, int],
     参数:
         point:        PPO 给出的原始目标点 (x, y)
         prior:        房间先验热力图
-        masks:        包含 free/explored/frontier 的掩码字典
+        masks:        包含 free/explored/frontier/reachable 等掩码字典
         room_infer_obj: 房型推理器，可用于后续扩展（当前未使用）
         recent_goals:  历史目标列表，用于生成回访惩罚
         alpha,beta,gamma,sigma,radius: 调节各项权重与搜索范围
@@ -140,7 +140,8 @@ def refine_ltg_with_prior(point: Tuple[int, int],
             mask = (xx - px) ** 2 + (yy - py) ** 2 <= (revisit_radius ** 2)
             novelty[mask] = 0.0
 
-    reachable = free.astype(np.bool_)
+    # 使用从主流程传入的可达域，若缺省则退化为自由栅格
+    reachable = masks.get('reachable', free.astype(np.bool_))
     # 回访惩罚项取值 [0,1]，取 0 时表示该区域近期已访问
     revisit_penalty = novelty.astype(np.float32)
 
