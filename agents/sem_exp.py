@@ -65,7 +65,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         obs, info = super().reset()
         info['g_reward'] = 0  # 初始化累计奖励，避免缺少键导致报错
         obs = self._preprocess_obs(obs)
-
+        self.obs = obs
         self.obs_shape = obs.shape
 
         # Episode initializations
@@ -110,7 +110,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         if planner_inputs["wait"]:
             self.last_action = None
             self.info["sensor_pose"] = [0., 0., 0.]
-            return np.zeros(self.obs.shape), 0., False, self.info
+            return np.zeros(self.obs_shape), 0., False, self.info
 
         # Reset reward if new long-term goal
         if planner_inputs["new_goal"]:
@@ -130,7 +130,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             obs, rew, done, info = super().step(action)
 
             # preprocess obs
-            obs = self._preprocess_obs(obs) 
+            obs = self._preprocess_obs(obs)
             self.last_action = action['action']
             self.obs = obs
             self.info = info
