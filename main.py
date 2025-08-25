@@ -451,7 +451,8 @@ def main():
             frontier &= reachable
 
             # 将临时黑名单作用于先验与前沿，并逐步衰减
-            prior[ban_masks[e] > 0] = 0.0  # 黑名单区域概率清零
+            if prior.shape == ban_masks[e].shape:
+                prior[ban_masks[e] > 0] = 0.0  # 黑名单区域概率清零
             frontier[ban_masks[e] > 0] = False  # 前沿中移除黑名单像素
             ban_masks[e][ban_masks[e] > 0] -= 1
 
@@ -933,9 +934,11 @@ def main():
                                     dq.append((ny, nx))
 
                 frontier &= reachable  # 仅保留可达前沿
+
                 # 黑名单：将被禁区域从先验与前沿中移除并衰减
-                prior[ban_masks[e] > 0] = 0.0
-                frontier[ban_masks[e] > 0] = False
+                if prior.shape == ban_masks[e].shape:
+                    prior[ban_masks[e] > 0] = 0.0  # 黑名单区域概率清零
+                frontier[ban_masks[e] > 0] = False  # 前沿中移除黑名单像素
                 ban_masks[e][ban_masks[e] > 0] -= 1
 
                 gx, gy = global_goals[e]
