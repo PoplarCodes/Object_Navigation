@@ -372,6 +372,27 @@ class OnlineRoomInfer:
         if env_id in self._last_env_step_dumped:
             del self._last_env_step_dumped[env_id]
 
+    def force_room_type(self, y_idx: int, x_idx: int, obj_id: int) -> None:
+        """当发现目标对象时，将所在房间强制标记为该对象对应的房型"""
+        if self.room_id_map is None or self.room_type_map is None:
+            return  # 若尚未完成房间推理则直接返回
+        H, W = self.room_id_map.shape
+        # 越界检查，防止访问非法索引
+        if not (0 <= y_idx < H and 0 <= x_idx < W):
+            return
+        rid = int(self.room_id_map[y_idx, x_idx])
+        if rid <= 0 or rid > len(self.rooms):
+            return  # 当前像素未分配房间或索引异常
+        r = self.rooms[rid - 1]
+        target_type = int(self.obj2room[obj_id].argmax())  # 目标对象最可能的房型
+        # 将该房间的房型概率重置为独热向量
+        r.type_probs = np.zeros_like(r.type_probs)
+        r.type_probs[target_type] = 1.0
+        r.type_label = target_type
+        r.type_emb = ROOM_TYPE_EMB[target_type]
+        # 同步更新整张房型标签图
+        self.room_type_map[r.pixels] = target_type
+
     def build_goal_prior(self, target_obj_id: int, env_id: int = 0, env_step: int = 0) -> np.ndarray:
         """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化，并保存到文件。
         规则：目标→房型偏好（obj2room[target]），与各房间的 type_probs 做点乘，

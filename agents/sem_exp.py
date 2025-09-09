@@ -106,10 +106,15 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
                          evaluation metric info
         """
         room_infer = planner_inputs.get('room_infer')  # 获取房型推理器
+        sx, sy = planner_inputs['pose_pred'][0], planner_inputs['pose_pred'][1]
+        ry = int(sy * 100.0 / self.args.map_resolution)  # 将坐标转换为栅格索引
+        rx = int(sx * 100.0 / self.args.map_resolution)
+        # 若已找到目标对象，则强制当前房间类型
+        if planner_inputs.get('found_goal') == 1 and room_infer is not None:
+            goal_obj = int(self.info.get('goal_cat_id', -1))
+            if goal_obj >= 0:
+                room_infer.force_room_type(ry, rx, goal_obj)
         if room_infer is not None and room_infer.room_type_map is not None:
-            sx, sy = planner_inputs['pose_pred'][0], planner_inputs['pose_pred'][1]
-            ry = int(sy * 100.0 / self.args.map_resolution)  # 将坐标转换为栅格索引
-            rx = int(sx * 100.0 / self.args.map_resolution)
             h, w = room_infer.room_type_map.shape
             label = -1
             if 0 <= ry < h and 0 <= rx < w:

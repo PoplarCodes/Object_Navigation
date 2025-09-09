@@ -4,7 +4,7 @@ import argparse
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-
+from constants import ROOM_TYPES  # 引入统一的房型标签
 
 def main() -> None:
     """脚本入口"""
@@ -19,14 +19,26 @@ def main() -> None:
     env_steps = data["env_steps"]
     probs = data["probs"]
 
-    # 绘制概率高于 0.5 的房间曲线
-    for i in range(probs.shape[1]):
-        room_probs = probs[:, i]
-        # 将小于 0.5 的概率替换为 NaN，避免绘制这些点
-        filtered = np.where(room_probs >= 0.5, room_probs, np.nan)
-        # 仅当该房间存在大于 0.5 的概率时才绘制折线
-        if np.any(~np.isnan(filtered)):
-            plt.plot(env_steps, filtered, label=f"room{i}")
+    # 判断概率矩阵的维度以兼容不同版本
+    if probs.ndim == 3:
+        # 新版格式：[步数, 房间数, 房型数]
+        for i in range(probs.shape[1]):
+            # 根据最后一步的概率取最大房型作为标签
+            type_idx = int(np.argmax(probs[-1, i]))
+            room_probs = probs[:, i, type_idx]
+            # 将小于 0.5 的概率替换为 NaN，避免绘制这些点
+            filtered = np.where(room_probs >= 0.5, room_probs, np.nan)
+            # 仅当该房型存在大于 0.5 的概率时才绘制折线
+            if np.any(~np.isnan(filtered)):
+                plt.plot(env_steps, filtered, label=ROOM_TYPES[type_idx])
+    else:
+        # 旧版格式：[步数, 房间数]
+        for i in range(probs.shape[1]):
+            room_probs = probs[:, i]
+            filtered = np.where(room_probs >= 0.5, room_probs, np.nan)
+            if np.any(~np.isnan(filtered)):
+                plt.plot(env_steps, filtered, label=f"room{i}")
+
     plt.xlabel("step")
     plt.ylabel("probability")
     plt.title("Room Probabilities")
