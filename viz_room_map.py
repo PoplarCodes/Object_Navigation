@@ -7,17 +7,7 @@ import json  # 读取房间标签
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
-
-# 房型标签列表，对应房间推理模块中的顺序
-ROOM_TYPES = [
-    "bedroom",
-    "bathroom",
-    "kitchen",
-    "dining_room",
-    "living_room",
-    "corridor",
-    "other",
-]
+from constants import ROOM_TYPES  # 房型标签统一来源于 constants 模块
 
 
 def main() -> None:
@@ -35,9 +25,9 @@ def main() -> None:
     # 尝试从 room_scores.json 读取对应步的房型标签
     room_labels = {}
     if args.scores and os.path.exists(args.scores):
-        # 从文件名解析出当前环境步数，便于在 JSON 中匹配
-        m = re.search(r"room_map_step(\d+)", os.path.basename(args.input))
-        step = int(m.group(1)) if m else None
+        # 从文件名解析出当前环境步数，兼容带 env 的文件名
+        m = re.search(r"_step(\d+)", os.path.basename(args.input))
+        step = int(m.group(1)) if m else None  # 若未匹配到则为 None
         with open(args.scores, "r", encoding="utf-8") as f:
             score_data = json.load(f)
         if step is not None:
@@ -71,7 +61,15 @@ def main() -> None:
             continue
         y = ys.mean()
         x = xs.mean()
-        plt.text(x, y, label, color="black", fontsize=8, ha="center", va="center")
+        plt.text(
+            x,
+            y,
+            f"{rid}:{label}",  # 同时显示房间编号和房型
+            color="black",
+            fontsize=8,
+            ha="center",
+            va="center",
+        )
 
     # 根据参数决定展示或保存图像
     if args.save:
