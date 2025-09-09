@@ -427,7 +427,9 @@ def main():
             goal_maps[e] = cat_semantic_scores
             found_goal[e] = 1
         elif getattr(args, 'use_room_prior', False):
-            prior = room_infer[e].build_goal_prior(int(goal_cat_id_np[e]))
+            # 传入环境编号与时间步，生成并保存房间先验热力图
+            prior = room_infer[e].build_goal_prior(
+                int(goal_cat_id_np[e]), env_id=e, env_step=int(infos[e]['time']))
 
 
             # 计算 free / explored / frontier 掩码
@@ -915,7 +917,10 @@ def main():
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
             elif getattr(args, 'use_room_prior', False):
-                prior = room_infer[e].build_goal_prior(int(goal_cat_ids[e]))
+                # 同样传入环境编号与下一步时间，生成并保存房间先验热力图
+                prior = room_infer[e].build_goal_prior(
+                    int(goal_cat_ids[e]), env_id=e,
+                    env_step=int(infos[e]['next']['time']))
 
                 # 计算前沿掩码，鼓励向未探索区域前进
                 free = (local_map[e, 0].cpu().numpy() == 0)

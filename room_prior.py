@@ -10,7 +10,7 @@ OnlineRoomInfer: 在线启发式房间分割 + 房型（Room Type）投票
 输出：
 - self.room_id_map: int32 [H, W]，>=1 表示房间ID，0 表示未知/未探索
 - self.room_type_scores: List[Dict]，每个房间一个字典，含 type_probs（7 维）、obj_hits 等
-- build_goal_prior(target_obj_id) -> float32 [H, W]，归一化的先验热力图（和目标类别相关）
+- build_goal_prior(target_obj_id, env_id, env_step) -> float32 [H, W]，归一化并保存的先验热力图（和目标类别相关）
 
 房型集合：
   0: bedroom
@@ -352,8 +352,8 @@ class OnlineRoomInfer:
         if env_id in self._last_env_step_dumped:
             del self._last_env_step_dumped[env_id]
 
-    def build_goal_prior(self, target_obj_id: int) -> np.ndarray:
-        """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化。
+    def build_goal_prior(self, target_obj_id: int, env_id: int = 0, env_step: int = 0) -> np.ndarray:
+        """根据目标对象类别，生成整图的房型先验热力图 [H,W]，已归一化，并保存到文件。
         规则：目标→房型偏好（obj2room[target]），与各房间的 type_probs 做点乘，
              得到每个房间的权重，再把权重均匀分配到该房间像素。
         可选：对已充分探索的房间施加衰减（decay_explored_in_prior）。
@@ -377,9 +377,22 @@ class OnlineRoomInfer:
         s = prior.sum()
         # 将 NaN/Inf 归零后再归一化，避免污染整图
         prior = np.nan_to_num(prior, nan=0.0, posinf=0.0, neginf=0.0)
-        # s = prior.sum()
+
         if s > 0:
             prior /= s
+        # === 新增：将先验热力图保存到 tmp/goal_prior 目录 ===
+        ep = self._episode_ids.get(env_id, 0)  # 获取当前 Episode 编号
+        base = os.path.join(
+            "tmp",  # 固定输出到项目根目录下的 tmp
+            "goal_prior",  # 子目录名
+            os.path.basename(self.dump_dir),  # 使用 dump_dir 的最后一级作为区分
+            f"thread_{env_id}",  # 线程/环境编号
+            f"eps_{ep + 1}",  # Episode 编号从1开始
+        )
+        os.makedirs(base, exist_ok=True)  # 递归创建目录
+        path = os.path.join(base, f"goal_prior_step{env_step}.npy")  # 以环境步数命名文件
+        np.save(path, prior)  # 保存先验热力图
+
         return prior
 
     # ----------------------- 内部：房间分割 ------------------------
