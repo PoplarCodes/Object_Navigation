@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 import os  # 引入 os 以保存房型概率供可视化
 import logging  # 引入 logging 用于输出警告
+from constants import ROOM_TYPES  # 引入统一的房型标签
 try:
     import cv2  # type: ignore
     _HAS_CV2 = True
@@ -87,7 +88,6 @@ _OBJ2ROOM = np.array([
     [0.05,   0.00,  0.60,  0.25,   0.05,  0.00, 0.05],  # bottle
 ], dtype=np.float32)
 
-ROOM_TYPES = ["bedroom", "bathroom", "kitchen", "dining_room", "living_room", "corridor", "other"]
 # 房型 one-hot 嵌入矩阵，每个房型对应一个独热向量
 ROOM_TYPE_EMB = np.eye(len(ROOM_TYPES), dtype=np.float32)
 
