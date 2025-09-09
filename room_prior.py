@@ -190,6 +190,7 @@ class OnlineRoomInfer:
 
         # 预备保存对象到房型打分链路的中间结果
         json_rooms: List[Dict] = []  # 收集所有房间的打分信息
+        unassigned_obj_hits: Dict[int, float] = {}  # 记录未能归属房间的对象证据
 
         # 计算用于对象证据统计的膨胀核半径（米→像素），覆盖靠墙/障碍的物体
         dil_r = max(int(0.4 / self.cfg.resolution_m), 1)
@@ -223,10 +224,15 @@ class OnlineRoomInfer:
 
             obj_hits = {}  # 记录每个对象在房间内的出现证据
             for k in range(self.n_obj):
-                # 使用膨胀后的掩码累积语义置信度作为对象证据
-                v = float((sem_soft[k] * mask_for_hits).sum())
-                if v > 0:
+                unmasked_hits = sem_soft[k] * explored_mask  # 已探索区域的语义概率
+                v = float(unmasked_hits.sum())  # 全局命中量
+                masked_v = float((sem_soft[k] * mask_for_hits).sum())
+                if masked_v > 0:
+                    obj_hits[k] = masked_v
+                elif v > 0:
+                    # 加入已探索区域的语义概率作为兜底对象证据
                     obj_hits[k] = v
+                    unassigned_obj_hits[k] = v
 
             # 3) 对象投票 → 房型概率
             type_logits = np.zeros(7, dtype=np.float32)
@@ -294,6 +300,8 @@ class OnlineRoomInfer:
             # === NEW C: 总是记录本步的全局物体证据 ===
             if len(global_obj_hits) > 0:
                 entry["global_obj_hits"] = {str(k): v for k, v in global_obj_hits.items()}
+            if len(unassigned_obj_hits) > 0:
+                entry["unassigned_obj_hits"] = {str(k): v for k, v in unassigned_obj_hits.items()}
             if len(json_rooms) == 0:
                 entry["free_sum"] = free_sum  # 记录可行走像素数，便于排查
                 entry["explored_sum"] = explored_sum  # 记录已探索像素数
