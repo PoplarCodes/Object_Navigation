@@ -22,22 +22,21 @@ def main() -> None:
     # 判断概率矩阵的维度以兼容不同版本
     if probs.ndim == 3:
         # 新版格式：[步数, 房间数, 房型数]
-        for i in range(probs.shape[1]):
-            # 根据最后一步的概率取最大房型作为标签
-            type_idx = int(np.argmax(probs[-1, i]))
-            room_probs = probs[:, i, type_idx]
-            # 将小于 0.5 的概率替换为 NaN，避免绘制这些点
-            filtered = np.where(room_probs >= 0.5, room_probs, np.nan)
-            # 仅当该房型存在大于 0.5 的概率时才绘制折线
+        for t in range(probs.shape[2]):
+            # 在所有房间中取该房型的最大概率，忽略房间编号
+            type_probs = np.max(probs[:, :, t], axis=1)
+            # 将低于 0.5 的概率置为 NaN，过滤掉噪声
+            filtered = np.where(type_probs >= 0.5, type_probs, np.nan)
+            # 若存在有效概率则绘制并仅以房型命名
             if np.any(~np.isnan(filtered)):
-                plt.plot(env_steps, filtered, label=ROOM_TYPES[type_idx])
+                plt.plot(env_steps, filtered, label=ROOM_TYPES[t])
     else:
         # 旧版格式：[步数, 房间数]
-        for i in range(probs.shape[1]):
-            room_probs = probs[:, i]
-            filtered = np.where(room_probs >= 0.5, room_probs, np.nan)
-            if np.any(~np.isnan(filtered)):
-                plt.plot(env_steps, filtered, label=f"room{i}")
+        # 取所有房间的最大概率，无法区分房型
+        max_probs = np.max(probs, axis=1)
+        filtered = np.where(max_probs >= 0.5, max_probs, np.nan)
+        if np.any(~np.isnan(filtered)):
+            plt.plot(env_steps, filtered, label="room")
 
     plt.xlabel("step")
     plt.ylabel("probability")
