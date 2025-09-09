@@ -87,6 +87,9 @@ _OBJ2ROOM = np.array([
     [0.05,   0.00,  0.60,  0.25,   0.05,  0.00, 0.05],  # bottle
 ], dtype=np.float32)
 
+ROOM_TYPES = ["bedroom", "bathroom", "kitchen", "dining_room", "living_room", "corridor", "other"]
+# 房型 one-hot 嵌入矩阵，每个房型对应一个独热向量
+ROOM_TYPE_EMB = np.eye(len(ROOM_TYPES), dtype=np.float32)
 
 @dataclass
 class RoomInfo:
@@ -96,7 +99,8 @@ class RoomInfo:
     type_probs: np.ndarray  # [7,]
     obj_hits: Dict[int, float] = field(default_factory=dict)
     explored_ratio: float = 0.0  # 可选：若能估计房内已探索比例
-
+    type_label: int = -1  # 预测的房型标签
+    type_emb: np.ndarray = field(default_factory=lambda: np.zeros(len(ROOM_TYPES), dtype=np.float32))  # 房型嵌入向量
 
 class OnlineRoomInfer:
     def __init__(self, cfg: RoomCfg, n_obj_classes: int = 15, dump_dir: str = "tmp"):
@@ -104,6 +108,7 @@ class OnlineRoomInfer:
         self.n_obj = n_obj_classes
         self.dump_dir = dump_dir  # 数据输出的根目录
         self.room_id_map: Optional[np.ndarray] = None   # int32 [H,W]
+        self.room_type_map: Optional[np.ndarray] = None   # 预测的房型标签图 [H,W]
         self.rooms: List[RoomInfo] = []
         # 归一化对象→房型先验
         row_sum = _OBJ2ROOM.sum(axis=1, keepdims=True) + 1e-6
@@ -116,6 +121,11 @@ class OnlineRoomInfer:
         self._episode_ids: Dict[int, int] = {}
         # 记录每个环境上一次写入的环境步，用于防止重复导出
         self._last_env_step_dumped: Dict[int, int] = {}
+
+    def get_type_embedding(self, label: int) -> np.ndarray:
+        """根据房型标签获取对应的嵌入向量"""
+        return ROOM_TYPE_EMB[label]
+
     # ------------------------- 对外主接口 -------------------------
     def update(self,
                traversible: np.ndarray,   # bool/0-1 可行走
@@ -246,6 +256,8 @@ class OnlineRoomInfer:
             if explored_ratio_map is not None:
                 explored_ratio = float((explored_ratio_map * mask).sum() / (mask.sum() + 1e-6))
 
+            type_label = int(type_probs.argmax())  # 选取概率最大的房型作为标签
+            type_emb = ROOM_TYPE_EMB[type_label]  # 对应的房型嵌入向量
             self.rooms.append(RoomInfo(
                 room_id=rid,
                 pixels=mask,
@@ -253,6 +265,8 @@ class OnlineRoomInfer:
                 type_probs=type_probs,
                 obj_hits=obj_hits,
                 explored_ratio=explored_ratio,
+                type_label=type_label,
+                type_emb=type_emb,
             ))
 
             # 将当前房间的打分信息加入列表，用于后续写入 JSON
@@ -260,7 +274,13 @@ class OnlineRoomInfer:
                 "room_id": rid,
                 "obj_hits": {str(k): v for k, v in obj_hits.items()},  # 各对象在房间内的出现证据
                 "type_probs": type_probs.tolist(),  # 房型概率分布
+                "type_label": int(type_label),  # 预测的房型标签
             })
+
+        # 根据预测结果生成整张房型标签图，-1 表示未知区域
+        self.room_type_map = np.full(self.room_id_map.shape, -1, dtype=np.int32)
+        for r in self.rooms:
+            self.room_type_map[r.pixels] = r.type_label
 
         # 每个环境步都写入记录，即使没有房间也要保存
         buf = self._episode_buffers.setdefault(env_id, [])

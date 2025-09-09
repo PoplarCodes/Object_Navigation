@@ -105,6 +105,23 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             info (dict): contains timestep, pose, goal category and
                          evaluation metric info
         """
+        room_infer = planner_inputs.get('room_infer')  # 获取房型推理器
+        if room_infer is not None and room_infer.room_type_map is not None:
+            sx, sy = planner_inputs['pose_pred'][0], planner_inputs['pose_pred'][1]
+            ry = int(sy * 100.0 / self.args.map_resolution)  # 将坐标转换为栅格索引
+            rx = int(sx * 100.0 / self.args.map_resolution)
+            h, w = room_infer.room_type_map.shape
+            label = -1
+            if 0 <= ry < h and 0 <= rx < w:
+                label = int(room_infer.room_type_map[ry, rx])
+            self.info['room_type_label'] = label  # 当前房型标签
+            if label >= 0:
+                self.info['room_type_embedding'] = room_infer.get_type_embedding(label)
+            else:
+                self.info['room_type_embedding'] = np.zeros_like(room_infer.get_type_embedding(0))
+        else:
+            self.info['room_type_label'] = -1
+            self.info['room_type_embedding'] = np.zeros(7, dtype=np.float32)
 
         # plan
         if planner_inputs["wait"]:
