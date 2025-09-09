@@ -23,7 +23,6 @@ def main() -> None:
     room_map = np.load(args.input)
 
     # 尝试从 room_scores.json 读取对应步的房型标签
-    room_labels = {}  # 房间编号到房型文字的映射
     room_types = {}   # 房间编号到房型索引的映射，后续用于按照房型着色
     if args.scores and os.path.exists(args.scores):
         # 从文件名解析出当前环境步数，兼容带 env 的文件名
@@ -45,9 +44,9 @@ def main() -> None:
                     rid = int(r.get("room_id", -1))
                     type_idx = int(r.get("type_label", -1))
                     if rid > 0 and 0 <= type_idx < len(ROOM_TYPES):
-                        # 记录每个房间对应的房型标签与索引
-                        room_labels[rid] = ROOM_TYPES[type_idx]
+                        # 仅记录房间编号对应的房型索引，后续不再使用房间编号
                         room_types[rid] = type_idx
+
 
     if room_types:
         # 若获取到房型信息，则按房型绘制
@@ -64,6 +63,24 @@ def main() -> None:
         # 显示房型分布图，仅关注房型
         plt.imshow(type_map, cmap=cmap, vmin=0, vmax=num_colors - 1)
         plt.colorbar(label="room type")
+        # 统计出现的房型索引（跳过 0），只按房型整体标注一次，避免同一房型多处重复标注
+        for t in np.unique(type_map):
+            if t == 0:
+                continue  # 0 为背景，不标注
+            ys, xs = np.where(type_map == t)
+            if ys.size == 0:
+                continue
+            y = ys.mean()
+            x = xs.mean()
+            plt.text(
+                x,
+                y,
+                ROOM_TYPES[t - 1],  # 使用房型名称作为标签
+                color="black",
+                fontsize=8,
+                ha="center",
+                va="center",
+            )
     else:
         # 若没有房型信息，仍按房间编号展示
         num_colors = int(np.max(room_map)) + 1
@@ -74,23 +91,6 @@ def main() -> None:
         plt.colorbar(label="room number")
 
     plt.title("Room Map")
-
-    # 在房间中心位置标注房型标签
-    for rid, label in room_labels.items():
-        ys, xs = np.where(room_map == rid)
-        if ys.size == 0:
-            continue
-        y = ys.mean()
-        x = xs.mean()
-        plt.text(
-            x,
-            y,
-            label,  # 仅显示房型标签
-            color="black",
-            fontsize=8,
-            ha="center",
-            va="center",
-        )
 
     # 根据参数决定展示或保存图像
     if args.save:
