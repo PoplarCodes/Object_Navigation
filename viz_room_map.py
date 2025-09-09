@@ -26,20 +26,26 @@ def main() -> None:
     room_labels = {}
     if args.scores and os.path.exists(args.scores):
         # 从文件名解析出当前环境步数，兼容带 env 的文件名
-        m = re.search(r"_step(\d+)", os.path.basename(args.input))
+        # 正则兼容前缀中可能出现的 env 信息
+        m = re.search(r"room_map_(?:env\d+_)?step(\d+)", os.path.basename(args.input))  # 兼容含 env 前缀的文件名
         step = int(m.group(1)) if m else None  # 若未匹配到则为 None
         with open(args.scores, "r", encoding="utf-8") as f:
             score_data = json.load(f)
         if step is not None:
+            # 在 JSON 中查找对应 env_step（可能为字符串），未匹配则忽略
+            target = None
             for entry in score_data:
-                if entry.get("env_step") == step:
-                    for r in entry.get("rooms", []):
-                        rid = int(r.get("room_id", -1))
-                        type_idx = int(r.get("type_label", -1))
-                        if 0 <= type_idx < len(ROOM_TYPES):
-                            room_labels[rid] = ROOM_TYPES[type_idx]
+                es = entry.get("env_step", entry.get("step"))
+                if es is not None and int(es) == step:
+                    target = entry
                     break
-
+            if target:
+                for r in target.get("rooms", []):
+                    rid = int(r.get("room_id", -1))
+                    type_idx = int(r.get("type_label", -1))
+                    if rid > 0 and 0 <= type_idx < len(ROOM_TYPES):
+                        # 标签采用“编号:类型”格式，便于对照
+                        room_labels[rid] = f"{rid}:{ROOM_TYPES[type_idx]}"
     # 获取房间编号范围，用于构建颜色映射
     num_colors = int(np.max(room_map)) + 1
 
