@@ -423,10 +423,9 @@ class OnlineRoomInfer:
             mass = w / (r.area_px + 1e-6)
             prior[r.pixels] += mass
 
-        s = prior.sum()
         # 将 NaN/Inf 归零后再归一化，避免污染整图
         prior = np.nan_to_num(prior, nan=0.0, posinf=0.0, neginf=0.0)
-
+        s = prior.sum()
         if s > 0:
             prior /= s
         # === 新增：将先验热力图保存到 tmp/goal_prior 目录 ===
