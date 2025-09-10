@@ -32,20 +32,16 @@ def main() -> None:
         with open(args.scores, "r", encoding="utf-8") as f:
             score_data = json.load(f)
         if step is not None:
-            # 在 JSON 中查找对应 env_step（可能为字符串），未匹配则忽略
-            target = None
+            # 遍历所有 env_step 不大于目标步数的记录，累积房间类型
             for entry in score_data:
                 es = entry.get("env_step", entry.get("step"))
-                if es is not None and int(es) == step:
-                    target = entry
-                    break
-            if target:
-                for r in target.get("rooms", []):
-                    rid = int(r.get("room_id", -1))
-                    type_idx = int(r.get("type_label", -1))
-                    if rid > 0 and 0 <= type_idx < len(ROOM_TYPES):
-                        # 仅记录房间编号对应的房型索引，后续不再使用房间编号
-                        room_types[rid] = type_idx
+                if es is not None and int(es) <= step:
+                    for r in entry.get("rooms", []):
+                        rid = int(r.get("room_id", -1))
+                        type_idx = int(r.get("type_label", -1))
+                        if rid > 0 and 0 <= type_idx < len(ROOM_TYPES):
+                            # 从历史数据累积房间类型、保持最早标签
+                            room_types.setdefault(rid, type_idx)
 
 
     if room_types:
