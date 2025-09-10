@@ -34,8 +34,14 @@ def main() -> None:
     # 找到概率最大的单元格坐标，作为长期目标点
     goal_row, goal_col = np.unravel_index(np.argmax(goal_prior), goal_prior.shape)
 
-    # 用热力图展示概率分布，并锁定显示范围 [0, 1]
-    plt.imshow(goal_prior, cmap="hot", vmin=0, vmax=1)
+    # 为可视化创建副本，并按最大值缩放至 [0,1]
+    display_map = goal_prior.copy()
+    max_val = display_map.max()
+    if max_val > 0:
+        display_map = display_map / max_val
+
+    # 用热力图展示概率分布，并锁定显示范围 [0,1]
+    plt.imshow(display_map, cmap="hot", vmin=0, vmax=1)
     plt.colorbar(label="probility")
     plt.title("Goal Prior")
     plt.xlabel("x")
