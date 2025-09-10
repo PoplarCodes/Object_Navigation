@@ -23,8 +23,10 @@ def main() -> None:
 
     # 用热力图展示概率分布，颜色越深表示概率越高
     plt.imshow(goal_prior, cmap="hot")
-    plt.colorbar(label="概率")
+    plt.colorbar(label="probility")
     plt.title("Goal Prior")
+    plt.xlabel("x")
+    plt.ylabel("y")
     # 在图中用红点标出长期目标位置
     plt.scatter(goal_col, goal_row, c="red", s=50, marker="o", label="LTG")
     plt.legend(loc="upper right")

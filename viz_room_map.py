@@ -87,7 +87,9 @@ def main() -> None:
         plt.colorbar(label="room number")
 
     plt.title("Room Map")
-
+    # 在图上用英文标注横坐标和纵坐标的含义
+    plt.xlabel("x")
+    plt.ylabel("y")
     # 根据参数决定展示或保存图像
     if args.save:
         # 如果选择保存，则在同目录下以相同文件名保存 PNG 图
