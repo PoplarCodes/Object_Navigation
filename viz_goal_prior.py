@@ -18,11 +18,24 @@ def main() -> None:
     # 读取目标先验概率矩阵
     goal_prior = np.load(args.input)
 
+    # 将 NaN 和 无穷值替换为 0，避免热力图失效
+    goal_prior = np.nan_to_num(goal_prior, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # 若概率存在负值，整体平移至非负区间
+    min_val = goal_prior.min()
+    if min_val < 0:
+        goal_prior = goal_prior - min_val
+
+    # 对概率矩阵进行归一化，防止数值过小导致显示全橙
+    total = goal_prior.sum()
+    if total > 0:
+        goal_prior = goal_prior / total
+
     # 找到概率最大的单元格坐标，作为长期目标点
     goal_row, goal_col = np.unravel_index(np.argmax(goal_prior), goal_prior.shape)
 
-    # 用热力图展示概率分布，颜色越深表示概率越高
-    plt.imshow(goal_prior, cmap="hot")
+    # 用热力图展示概率分布，并锁定显示范围 [0, 1]
+    plt.imshow(goal_prior, cmap="hot", vmin=0, vmax=1)
     plt.colorbar(label="probility")
     plt.title("Goal Prior")
     plt.xlabel("x")
